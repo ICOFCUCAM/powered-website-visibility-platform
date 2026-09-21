@@ -1,8 +1,6 @@
 import Link from "next/link";
 
-import { Eyebrow } from "./Eyebrow";
-import { GlobeLayer } from "./GlobeLayer";
-import { Orbit } from "./Orbit";
+import { Hero } from "./Hero";
 
 /**
  * The four scoring components, with the weights they actually carry
@@ -70,46 +68,7 @@ export default function Home() {
       </header>
 
       <main>
-        <section className="mk-shell mk-hero">
-          <div>
-            <Eyebrow />
-            <h1 className="mk-h1">
-              Turn your online presence into growth.
-            </h1>
-            <p className="mk-lede">
-              Connect your website once. We bring your Google data together,
-              explain what it means, and tell you what to do next — across
-              Search, Technical, Content and Analytics.
-            </p>
-            <div className="mk-actions">
-              <Link href="/onboarding" className="mk-cta">Get started →</Link>
-              <Link href="/login" className="mk-cta mk-cta--ghost">Sign in</Link>
-            </div>
-
-            <dl className="mk-stats">
-              <div className="mk-stat">
-                <b>4</b>
-                <span>Weighted signals</span>
-              </div>
-              <div className="mk-stat">
-                <b>1</b>
-                <span>Plan a week</span>
-              </div>
-              <div className="mk-stat">
-                <b>0</b>
-                <span>Invented numbers</span>
-              </div>
-            </dl>
-          </div>
-
-          <div className="mk-figure">
-            {/* Three layers: the dot-Earth, the orbital cage around it, and
-                the device in front. */}
-            <GlobeLayer />
-            <Orbit />
-            <Preview />
-          </div>
-        </section>
+        <Hero />
 
         <section id="pillars" className="mk-shell mk-section">
           <div className="mk-section-head">
@@ -217,99 +176,3 @@ export default function Home() {
  * so on its face — a product whose first rule is "never invent a number"
  * cannot put unlabelled ones on its own front page.
  */
-function Preview() {
-  const pillars = [
-    ["Search", 78],
-    ["Technical", 74],
-    ["Content", 68],
-    ["Analytics", 69],
-  ] as const;
-
-  const nav = [
-    "Overview", "Search", "Content", "Technical", "Analytics", "Plan",
-  ] as const;
-
-  return (
-    <div className="mk-device">
-      <div className="mk-device-tilt">
-        {/* Thickness, glow and bezel: what makes it read as a physical object
-            on a desk rather than a rectangle pasted onto the page. */}
-        <div className="mk-device-glow" aria-hidden="true" />
-        <div className="mk-device-shadow" aria-hidden="true" />
-        <div className="mk-device-edge" aria-hidden="true" />
-        <div className="mk-ipad">
-          {/* Hardware. Landscape with the camera on the long top edge, so:
-              power on the top edge, volume pair and speakers on the near
-              (left) edge, speakers and USB-C on the far edge. */}
-          <span className="mk-hw mk-hw--power" aria-hidden="true" />
-          <span className="mk-hw mk-hw--vol-up" aria-hidden="true" />
-          <span className="mk-hw mk-hw--vol-down" aria-hidden="true" />
-          <span className="mk-grille mk-grille--left" aria-hidden="true" />
-          <span className="mk-grille mk-grille--right" aria-hidden="true" />
-          <span className="mk-port" aria-hidden="true" />
-          <div className="mk-ipad-chamfer" aria-hidden="true" />
-          <div className="mk-ipad-bezel">
-            <span className="mk-ipad-cam" aria-hidden="true" />
-            <div className="mk-screen">
-              <div className="mk-screen-top" aria-hidden="true" />
-              <div className="mk-screen-sheen" aria-hidden="true" />
-
-              <div className="mk-app">
-                <aside className="mk-side">
-                  <div className="mk-side-brand">Visibility Hub</div>
-                  <ul className="mk-side-nav">
-                    {nav.map((item, i) => (
-                      <li key={item} className={i === 0 ? "is-active" : undefined}>
-                        {item}
-                      </li>
-                    ))}
-                  </ul>
-                  <div className="mk-side-foot">example.com</div>
-                </aside>
-
-                <div className="mk-main">
-                  <header className="mk-main-head">
-                    <div>
-                      <h3>Overview</h3>
-                      <p>Your online visibility at a glance.</p>
-                    </div>
-                    <span className="mk-sample">Example — not real data</span>
-                  </header>
-
-                  <div className="mk-main-top">
-                    <div className="mk-ring">
-                      <div className="mk-ring-label">
-                        <b>72</b>
-                        <span>Visibility</span>
-                      </div>
-                    </div>
-                    <div className="mk-cards">
-                      {pillars.map(([label, value]) => (
-                        <div key={label} className="mk-mini">
-                          <span>{label}</span>
-                          <em><b>{value}</b><i>/ 100</i></em>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="mk-ops">
-                    <p>This week&rsquo;s plan</p>
-                    {/* Four, because the plan is four things — same as the
-                        copy below and the same as what the product builds. */}
-                    <ol>
-                      <li><em>1</em> Improve meta titles on key pages <span className="mk-tag">Content</span></li>
-                      <li><em>2</em> Fix pages returning redirects <span className="mk-tag">Technical</span></li>
-                      <li><em>3</em> Expand thin pages that already rank <span className="mk-tag">Search</span></li>
-                      <li><em>4</em> Add descriptions to 12 pages missing them <span className="mk-tag">Content</span></li>
-                    </ol>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}

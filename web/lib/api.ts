@@ -525,3 +525,30 @@ export async function askAssistant(
     parsed.events.forEach(onFrame);
   }
 }
+
+
+/**
+ * The public scan behind the hero. No token: this is the one call in the app
+ * that serves somebody who has not signed up, and it writes nothing.
+ */
+export type PeekFinding = {
+  type: string;
+  severity: string | null;
+  evidence: Record<string, unknown>;
+};
+
+export type PeekResult = {
+  url: string;
+  final_url: string;
+  status_code: number;
+  title: string | null;
+  findings: PeekFinding[];
+  checked: number;
+};
+
+export async function peek(url: string): Promise<PeekResult> {
+  return request<PeekResult>("/peek", null, {
+    method: "POST",
+    body: JSON.stringify({ url }),
+  });
+}

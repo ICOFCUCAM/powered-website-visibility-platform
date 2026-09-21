@@ -25,6 +25,7 @@ from api.hub.routes import connections as hub_connections
 from api.hub.routes import oauth as hub_oauth
 from api.hub.routes import properties as hub_properties
 from api.hub.routes import sync as hub_sync
+from api.peek import routes as peek_routes
 from api.routers import (
     audit,
     auth,
@@ -105,6 +106,7 @@ def create_app() -> FastAPI:
         # delete product data — so it is a bounded module of its own, mounted
         # here for the same reason the Hub's routers are.
         account_routes.router,
+        peek_routes.router,
         # The Hub mounts its own routers. The core never imports them for
         # anything but composition, and the Hub imports none of the core's.
         hub_oauth.router,

@@ -77,6 +77,14 @@ channel with no customer domain in it, and "your Google connection has stopped
 working" goes to the customer, with what to do about it. Neither audience gets
 the other's problems. See [15-alerting.md](docs/15-alerting.md).
 
+The landing page runs a real check. Type a domain and one page is fetched
+and scored against the product's own rules — not a second implementation of
+them — so the front page shows what was actually found rather than an
+invented dashboard. It writes nothing, and the URL it fetches goes through a
+guard that refuses private addresses at resolution AND at the socket, because
+a server that fetches any URL on request will read its own metadata endpoint
+for anyone who asks. See [17-public-scan.md](docs/17-public-scan.md).
+
 The Strategist reads through nine typed, read-only tools. It writes no SQL and
 cannot name a tenant: no tool schema contains an organisation or website id,
 so scope comes from the session and there is no argument that could reach
@@ -148,6 +156,7 @@ The technical specification in [`docs/`](docs/) remains the source of truth.
 | [14-deletion.md](docs/14-deletion.md) | Disconnect and account deletion: what the cascade misses, and how it is verified |
 | [15-alerting.md](docs/15-alerting.md) | Operator incidents and customer notices: the line between noise and silence |
 | [16-deployment.md](docs/16-deployment.md) | What runs where, the environment each process needs, and the order that matters |
+| [17-public-scan.md](docs/17-public-scan.md) | The hero's live scan: the URL guard, the limits, and why it writes nothing |
 
 ## V1 → V2 → V3
 

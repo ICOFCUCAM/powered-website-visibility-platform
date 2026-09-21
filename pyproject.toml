@@ -130,12 +130,35 @@ forbidden_modules = ["api.workers"]
 # so an endpoint cannot accidentally leak a cross-tenant count or fire an
 # operator page.
 [[tool.importlinter.contracts]]
+name = "The public scan cannot touch the database"
+type = "forbidden"
+# `api.peek` serves somebody with no account, so there is no organisation to
+# scope a query by and no membership to check. The safest way to guarantee it
+# never reads or writes tenant data is to make reaching the database from it
+# impossible rather than merely unintended. Its rate limiter talks to Redis
+# and nothing else.
+source_modules = ["api.peek"]
+forbidden_modules = [
+    "api.adapters.db", "api.repositories", "api.deps", "api.hub",
+    "api.workers", "api.alerting", "api.ai",
+]
+# Direct imports only, for the same reason as the model contract. Running the
+# REAL rules is the whole design — a peek that disagreed with the audit would
+# be worse than no peek — and `api.analysis.rules.base` reaches the database
+# through `ctr_baseline` for a curve this never builds. What is forbidden is
+# `api.peek` itself opening a connection, fetching a row, or resolving a
+# tenant. That it writes nothing at all is asserted directly by
+# test_peek.py::test_nothing_is_written_anywhere, which counts rows either
+# side of a scan.
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
 name = "Alerting is operator machinery, not a request path concern"
 type = "forbidden"
 source_modules = [
     "api.routers", "api.repositories", "api.domain", "api.adapters", "api.deps",
     "api.hub", "api.analysis", "api.crawler", "api.ai", "api.reports",
-    "api.account", "api.main",
+    "api.account", "api.main", "api.peek",
 ]
 forbidden_modules = ["api.alerting"]
 
