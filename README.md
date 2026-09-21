@@ -9,9 +9,15 @@ Discover → Diagnose → Recommend → Fix → Measure → Repeat
 
 ## Status
 
-**M1 — foundation.** The database, the API skeleton with its org-scoping
-dependency chain, and the web shell exist and run. Google, the crawler, the
-rules engine and the dashboard (M2–M9) do not yet.
+**M2 — Google Hub.** The database, the API with its org-scoping dependency
+chain, the web shell, and the Google connection layer: OAuth with PKCE, the
+encrypted token vault, property discovery across Search Console and GA4,
+auto-matching, linking and ownership recording. The crawler, the rules engine
+and the dashboard (M5–M9) do not exist yet.
+
+The live Google handshake is the one thing untested here, because it needs a
+verified Cloud project and a real user's consent. Everything up to it runs
+against a fake Google that drives the real client code.
 
 ```
 ./scripts/dev-db.sh      # throwaway Postgres with every migration applied
@@ -28,6 +34,7 @@ cd web && npm run dev                          # UI on :3000
 | `api/adapters/` | The only place Supabase and the database driver appear. |
 | `api/repositories/` | Postgres implementations of the domain's repository protocols. |
 | `api/routers/` | `/api/v1` surface. |
+| `api/hub/` | The Google Hub: the only module that may reach Google. Its own routes, services, providers and domain events. |
 | `web/` | Next.js shell: sign-in, add a website, list them. |
 | `db/` | Migrations, roles, schema tests. |
 

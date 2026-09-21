@@ -18,6 +18,10 @@ from fastapi.responses import JSONResponse
 from api.adapters import db
 from api.config import get_settings
 from api.domain.errors import AppError
+from api.hub import deps as hub_deps
+from api.hub.routes import connections as hub_connections
+from api.hub.routes import oauth as hub_oauth
+from api.hub.routes import properties as hub_properties
 from api.routers import auth, health, websites
 
 logger = logging.getLogger("visibility_hub")
@@ -35,6 +39,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     try:
         yield
     finally:
+        await hub_deps.close_clients()
         await db.close_pool()
 
 
@@ -63,7 +68,16 @@ def create_app() -> FastAPI:
         logger.info("app_error code=%s status=%s", exc.code, exc.status)
         return JSONResponse(status_code=exc.status, content=exc.as_payload())
 
-    for router in (health.router, auth.router, websites.router):
+    for router in (
+        health.router,
+        auth.router,
+        websites.router,
+        # The Hub mounts its own routers. The core never imports them for
+        # anything but composition, and the Hub imports none of the core's.
+        hub_oauth.router,
+        hub_connections.router,
+        hub_properties.router,
+    ):
         app.include_router(router, prefix="/api/v1")
 
     return app

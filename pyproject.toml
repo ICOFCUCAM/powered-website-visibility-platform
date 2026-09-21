@@ -74,14 +74,29 @@ source_modules = [
 # which is the intent anyway — no Google client of any kind outside the Hub.
 forbidden_modules = ["googleapiclient", "google", "google_auth_oauthlib"]
 
+# The documented boundary (docs/08-architecture.md) forbids the Hub importing
+# PRODUCT logic: crawler, scoring, recommendations, dashboard, competitors. It
+# deliberately does not forbid the shared tenancy layer — authentication,
+# membership and the website record are platform primitives every module needs,
+# and denying them would force the Hub to duplicate auth rather than decouple.
 [[tool.importlinter.contracts]]
-name = "The Hub does not import the core"
+name = "The Hub does not import product logic"
 type = "forbidden"
 source_modules = ["api.hub"]
 forbidden_modules = [
-    "api.routers", "api.repositories", "api.crawler",
-    "api.analysis", "api.ai", "api.reports",
+    "api.routers", "api.crawler", "api.analysis", "api.ai", "api.reports",
 ]
+
+# The other direction, which matters more for extraction: the core must never
+# reach into the Hub. api.main is excluded because it is the composition root —
+# mounting the Hub's routers is exactly its job.
+[[tool.importlinter.contracts]]
+name = "The core does not import the Hub"
+type = "forbidden"
+source_modules = [
+    "api.routers", "api.repositories", "api.domain", "api.adapters", "api.deps",
+]
+forbidden_modules = ["api.hub"]
 
 [[tool.importlinter.contracts]]
 name = "Domain does not depend on delivery or persistence"

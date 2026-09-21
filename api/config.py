@@ -23,6 +23,24 @@ def _required(name: str) -> str:
 
 
 @dataclass(frozen=True, slots=True)
+class GoogleSettings:
+    """Only required when the Hub is actually used.
+
+    Kept out of Settings so a developer can run the API, the crawler and the
+    tests without Google credentials — and so a missing credential produces a
+    clear error at the point of use rather than a startup failure that looks
+    unrelated.
+    """
+
+    client_id: str
+    client_secret: str
+    redirect_uri: str
+    token_master_key: str
+    redis_url: str
+    web_base_url: str
+
+
+@dataclass(frozen=True, slots=True)
 class Settings:
     database_url: str
     service_database_url: str
@@ -36,6 +54,16 @@ class Settings:
     @property
     def is_production(self) -> bool:
         return self.environment == "production"
+
+    def google(self) -> GoogleSettings:
+        return GoogleSettings(
+            client_id=_required("GOOGLE_CLIENT_ID"),
+            client_secret=_required("GOOGLE_CLIENT_SECRET"),
+            redirect_uri=_required("GOOGLE_REDIRECT_URI"),
+            token_master_key=_required("TOKEN_MASTER_KEY"),
+            redis_url=_required("REDIS_URL"),
+            web_base_url=os.environ.get("WEB_BASE_URL", "http://localhost:3000"),
+        )
 
 
 @lru_cache(maxsize=1)
