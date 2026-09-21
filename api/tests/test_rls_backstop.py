@@ -173,3 +173,23 @@ async def test_every_tenant_table_carries_an_organisation_column(client):
         "row-level security is enabled with no policy, so the request-path "
         f"role silently reads nothing from: {enabled_without_policy}"
     )
+
+
+async def test_the_request_role_cannot_write_the_spend_log(client):
+    """`llm_calls` is written by the system, never by a client role.
+
+    A browser-reachable role that could insert here could inflate its own
+    recorded spend and pollute the cost-per-feature figures pricing decisions
+    come from. The read policy stays — a customer may inspect their own
+    metering — and `api/ai/metering.py` opens a service session to write.
+    """
+    import psycopg
+
+    async with db.session() as conn:
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            await conn.execute(
+                "insert into llm_calls (organization_id, purpose, model, "
+                "  model_provider, cost_usd, derived_from) "
+                "values (gen_random_uuid(), 'strategist_chat', 'm', 'anthropic', "
+                "  0, '{\"x\":1}')"
+            )

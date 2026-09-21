@@ -122,6 +122,11 @@ export default function DashboardPage() {
     <main className="wrap">
       <p className="greeting">{greeting()}</p>
       <h1 style={{ fontSize: 26, marginBottom: 6 }}>{data.website.domain}</h1>
+      <p className="plan__sub">
+        {/* Offered here rather than buried: the question someone arrives with
+            is usually "why", and the dashboard answers "what". */}
+        <Link href="/assistant">Ask a question about your website →</Link>
+      </p>
 
       {data.setup_hint ? (
         <p className="headline">

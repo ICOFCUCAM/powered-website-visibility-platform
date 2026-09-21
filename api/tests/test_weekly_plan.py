@@ -17,6 +17,7 @@ from datetime import date, timedelta
 
 import pytest
 
+from api.ai.metering import reusing
 from api.ai.plan import WeeklyPlanService, week_start_for, window_for
 from api.analysis.catalogue import seed
 from api.tests.fake_model import FakeProvider
@@ -67,7 +68,11 @@ async def add_issue(conn, org, website_id, type_key, *, impact, path=None):
 
 def plan_service(conn, org, website_id, provider=None) -> WeeklyPlanService:
     return WeeklyPlanService(
-        conn, organization_id=org, website_id=website_id, provider=provider
+        conn,
+        organization_id=org,
+        website_id=website_id,
+        provider=provider,
+        meter=reusing(conn),
     )
 
 

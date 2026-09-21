@@ -14,7 +14,12 @@ from __future__ import annotations
 import logging
 import os
 
-from api.ai.providers import AnthropicProvider, LLMProvider
+from api.ai.providers import (
+    AnthropicChatProvider,
+    AnthropicProvider,
+    ChatProvider,
+    LLMProvider,
+)
 
 logger = logging.getLogger("visibility_hub.ai")
 
@@ -43,3 +48,30 @@ def get_provider() -> LLMProvider | None:
         _provider = AnthropicProvider.from_api_key(api_key)
     _resolved = True
     return _provider
+
+
+_chat: ChatProvider | None = None
+_chat_resolved = False
+
+
+def set_chat_provider(provider: ChatProvider | None) -> None:
+    global _chat, _chat_resolved
+    _chat, _chat_resolved = provider, True
+
+
+def get_chat_provider() -> ChatProvider | None:
+    """None when no key is configured.
+
+    Unlike explanations and the weekly plan, there is no template fallback for
+    a conversation — a scripted reply pretending to be an analyst is worse
+    than an honest "not available here". The endpoint says so and the screen
+    stays hidden.
+    """
+    global _chat, _chat_resolved
+    if _chat_resolved:
+        return _chat
+
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    _chat = AnthropicChatProvider.from_api_key(api_key) if api_key else None
+    _chat_resolved = True
+    return _chat

@@ -190,16 +190,52 @@ is one prompt injection away from a cross-tenant leak.
 | `compare_periods(metric, a, b)` | aligned series for two windows |
 | `get_site_changes(period)` | crawl diffs, applied fixes, verification results |
 
-Guardrails: tools are read-only; row caps on every return; the org scope comes
-from the authenticated session; the system prompt states that tool results are
-data and never instructions; a turn budget caps tool calls per message; and
-every call is metered to `llm_calls` against the org's monthly budget.
+Guardrails, and each is a loop rule rather than a request in the prompt:
+
+| Bound | Where it lives |
+| --- | --- |
+| Tools are read-only | Nine parameterised queries; no tool takes SQL, a table, a column or an ORDER BY |
+| Row caps | `ROW_CAP`, applied after the model's own `limit` |
+| Windows | An allowlist (`7d`/`28d`/`90d`/`180d`), never a free-text range |
+| Org scope | `StrategistScope`, built from the session. **No tool schema contains `organization_id` or `website_id`**, so there is no argument the model could supply to reach another tenant — asserted in `test_strategist_tools.py` rather than trusted |
+| Tool budget | 10 calls per customer message; the rest come back as an error result telling the model to answer with what it has |
+| Round budget | 5 model turns, and **the last is sent with no tools**, so a model that would keep looking is made to answer instead of stopping silently |
+| Spend | Checked before the first round, metered after every one |
+| Question size | Capped, so one pasted log file cannot cost a month's allowance |
+
+**Tool results are data.** They arrive as `tool_result` blocks and are never
+interpolated into the system prompt — which matters because they contain page
+titles, meta descriptions and search phrases: text written by strangers on the
+open web. The prompt says so explicitly, and because the tools are read-only
+the worst case of an injection is a wrong answer rather than an action.
+
+**Metering goes through the service role.** `llm_calls` carries a read policy
+and no write policy: a browser-reachable role that could insert there could
+inflate its own recorded spend and pollute the cost-per-feature figures pricing
+decisions come from. The Strategist and "generate my report now" were the first
+metered calls on the request path, which is how that gap was found.
 
 Answer style: lead with the finding, cite the numbers used, name the pages or
 queries, end with one concrete next step. When the data does not support a
 conclusion, say that — "your traffic fell but the drop is entirely in one query
 that is seasonal; there is no website problem in this data" is a better answer
 than a confident wrong one.
+
+Every tool result carries the window it covers, because a model can only cite
+what it was told, and an uncited comparison is how dashboards lose arguments.
+Results also say when there is NO data, distinctly from zero: an empty Search
+Console connection and a site with no traffic look identical in the numbers and
+are completely different situations.
+
+**No model, no Strategist.** Unlike explanations and the weekly plan, there is
+no template fallback here — a scripted reply pretending to be an analyst is
+worse than an honest absence. `GET /websites/{id}/conversations` returns
+`available: false` and the screen says so.
+
+Every turn's tool calls, with their inputs and row counts, are stored on
+`conversation_messages.steps` and shown under the answer. When somebody
+disputes a figure, the useful reply is which query ran over which window —
+not one person's memory against another's.
 
 ## Model routing and cost control
 

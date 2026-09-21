@@ -28,6 +28,15 @@ SCHEMA = {
 }
 
 
+def responds_stream(body: bytes):
+    def handler(_: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(
+            200, headers={"content-type": "text/event-stream"}, content=body
+        )
+
+    return handler
+
+
 def responds(body, status: int = 200):
     def handler(_: httpx2.Request) -> httpx2.Response:
         return httpx2.Response(status, json=body)
@@ -203,3 +212,111 @@ async def test_a_server_error_becomes_a_provider_error():
     )
     with pytest.raises(ProviderError):
         await generate(provider)
+
+
+# ---------------------------------------------------------------------------
+# Streaming conversation
+# ---------------------------------------------------------------------------
+async def drain(provider, tools=None):
+    from api.ai.providers import TextDelta, TurnFinished
+
+    text, finished = "", None
+    async for event in provider.stream(
+        system="You are an analyst.",
+        messages=[{"role": "user", "content": "why did traffic fall?"}],
+        tools=tools if tools is not None else [],
+    ):
+        if isinstance(event, TextDelta):
+            text += event.text
+        elif isinstance(event, TurnFinished):
+            finished = event
+    return text, finished
+
+
+TOOL = {
+    "name": "get_movers",
+    "description": "what moved",
+    "input_schema": {"type": "object", "properties": {"period": {"type": "string"}}},
+}
+
+
+async def test_a_conversation_streams_text_as_it_arrives():
+    from api.tests.fake_model import anthropic_chat_over, streamed_message
+
+    provider, requests = anthropic_chat_over(
+        responds_stream(streamed_message(text="Your clicks fell by 280."))
+    )
+    text, finished = await drain(provider)
+
+    assert text == "Your clicks fell by 280."
+    assert finished.stop_reason == "end_turn"
+    assert finished.tool_calls == []
+    assert finished.model == "claude-opus-5"
+    assert requests[0]["stream"] is True
+    assert requests[0]["thinking"] == {"type": "adaptive"}
+
+
+async def test_tool_calls_come_back_parsed_with_their_input():
+    from api.tests.fake_model import anthropic_chat_over, streamed_message
+
+    provider, requests = anthropic_chat_over(
+        responds_stream(
+            streamed_message(
+                text="Let me look.", tool=("get_movers", {"period": "28d"})
+            )
+        )
+    )
+    text, finished = await drain(provider, tools=[TOOL])
+
+    assert text == "Let me look."
+    assert finished.stop_reason == "tool_use"
+    assert [(c.name, c.input) for c in finished.tool_calls] == [
+        ("get_movers", {"period": "28d"})
+    ]
+    assert requests[0]["tools"][0]["name"] == "get_movers"
+
+
+async def test_the_last_round_sends_no_tools_field_at_all():
+    """Not an empty list — absent. A model handed `tools: []` on the round
+    that must produce an answer is being asked an ambiguous question."""
+    from api.tests.fake_model import anthropic_chat_over, streamed_message
+
+    provider, requests = anthropic_chat_over(
+        responds_stream(streamed_message(text="Done."))
+    )
+    await drain(provider, tools=[])
+    assert "tools" not in requests[0]
+
+
+async def test_a_streamed_turn_carries_its_usage_and_cost():
+    from api.tests.fake_model import anthropic_chat_over, streamed_message
+
+    provider, _ = anthropic_chat_over(
+        responds_stream(
+            streamed_message(text="ok", input_tokens=10_000, output_tokens=2_000)
+        )
+    )
+    _, finished = await drain(provider)
+
+    assert (finished.input_tokens, finished.output_tokens) == (10_000, 2_000)
+    assert str(finished.cost_usd) == "0.100000"
+
+
+async def test_a_streamed_refusal_is_raised_not_returned():
+    from api.tests.fake_model import anthropic_chat_over, streamed_message
+
+    provider, _ = anthropic_chat_over(
+        responds_stream(streamed_message(text="", stop_reason="refusal"))
+    )
+    with pytest.raises(ProviderRefused):
+        await drain(provider)
+
+
+async def test_a_broken_stream_becomes_a_provider_error():
+    from api.tests.fake_model import anthropic_chat_over
+
+    provider, _ = anthropic_chat_over(
+        responds({"type": "error", "error": {"message": "overloaded"}}, status=529)
+    )
+    with pytest.raises(ProviderError):
+        await drain(provider)

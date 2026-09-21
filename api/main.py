@@ -33,6 +33,7 @@ from api.routers import (
     performance,
     plans,
     reports,
+    strategist,
     websites,
 )
 
@@ -90,6 +91,7 @@ def create_app() -> FastAPI:
         dashboard.router,
         plans.router,
         reports.router,
+        strategist.router,
         # The Hub mounts its own routers. The core never imports them for
         # anything but composition, and the Hub imports none of the core's.
         hub_oauth.router,

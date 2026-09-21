@@ -9,12 +9,12 @@ Discover → Diagnose → Recommend → Fix → Measure → Repeat
 
 ## Status
 
-**M8 + the onboarding wizard.** The database, the API, the Google connection
-layer (OAuth with PKCE, encrypted token vault, property discovery,
+**V1 is complete — M0 through M9.** The database, the API, the Google
+connection layer (OAuth with PKCE, encrypted token vault, property discovery,
 auto-matching, linking, ownership), Search Console and GA4 synchronisation,
-the crawler, the rules engine and scoring, the dashboard and audit
-screens, the weekly plan and its email, and the wizard a customer actually
-walks through:
+the crawler, the rules engine and scoring, the dashboard and audit screens,
+the weekly plan and its email, the AI Strategist, and the wizard a customer
+actually walks through:
 
 ```
 1. Your website        example.com
@@ -40,15 +40,36 @@ Visibility score 52/100 · position 12.4, 5.6% better than the previous 28 days
 4. Serve 6 pages' text without JavaScript
 ```
 
-The AI strategist (M9) does not exist yet.
+and the Strategist, which answers from that data and nothing else:
 
-The AI layer runs **with or without a model**. Selection and ranking are code,
-so the four priorities in a plan are the same either way; a model writes the
+```
+> Why did my traffic change?
+  checking your search performance…
+  finding what changed…
+
+  Your clicks rose by 224 to 1,456 between 22 Aug and 18 Sep, against the
+  28 days before. Nothing in the query data moved far enough to explain it.
+  The largest thing you could act on today is missing search descriptions
+  on 5 pages — worth roughly 252 clicks a month.
+
+  ▸ 3 checks against your data
+```
+
+The Strategist reads through nine typed, read-only tools. It writes no SQL and
+cannot name a tenant: no tool schema contains an organisation or website id,
+so scope comes from the session and there is no argument that could reach
+another customer's data.
+
+The AI layer runs **with or without a model** for explanations and the weekly
+plan. Selection and ranking are code, so the four priorities in a plan are the same either way; a model writes the
 prose when one is configured, and a validator refuses any generation
 containing a figure the customer's own data does not support. With no
 `ANTHROPIC_API_KEY` set, every explanation and plan comes from hand-written
 templates drawn from the issue catalogue and the rule thresholds — plain,
-correct, and made of the same numbers.
+correct, and made of the same numbers. The Strategist is the exception and
+says so: a conversation has no honest template, so with no key configured the
+endpoint returns `assistant_unavailable` and the screen explains rather than
+answering.
 
 The live Google handshake is the one thing untested here, because it needs a
 verified Cloud project and a real user's consent. Everything up to it runs
@@ -72,9 +93,10 @@ cd web && npm run dev                          # UI on :3000
 | `api/hub/` | The Google Hub: the only module that may reach Google. Its own routes, services, providers and domain events. |
 | `api/crawler/` | Politeness, frontier, fetch, extraction, render escalation. |
 | `api/analysis/` | 27 deterministic rules, the CTR baseline, versioned scoring. |
-| `api/ai/` | The only module that may reach a model. Versioned prompts, the evidence cache, budget admission, the numbers validator, the weekly plan. |
+| `api/ai/` | The only module that may reach a model. Versioned prompts, the evidence cache, budget admission, the numbers validator, the weekly plan, the Strategist loop. |
+| `api/ai/tools/` | The nine typed, read-only queries the Strategist may run. Scope is bound server-side; no schema names a tenant. |
 | `api/reports/` | Weekly report assembly, the HTML and text email, signed links, delivery. |
-| `web/` | Next.js: onboarding wizard, dashboard, audit, this week's plan, sign-in. |
+| `web/` | Next.js: onboarding wizard, dashboard, audit, this week's plan, the assistant, sign-in. |
 | `db/` | Migrations, roles, schema tests. |
 
 The technical specification in [`docs/`](docs/) remains the source of truth.

@@ -25,6 +25,7 @@ from uuid import UUID
 from psycopg import AsyncConnection
 
 from api.adapters.db import fetch_all, fetch_one
+from api.ai.metering import DEFAULT_SESSION, MeterSession
 from api.ai.plan import WeeklyPlanService
 from api.ai.providers import LLMProvider
 from api.crawler.storage import ArtifactStore
@@ -60,6 +61,7 @@ async def generate(
     website_id: UUID,
     as_of: date | None = None,
     provider: LLMProvider | None = None,
+    meter: MeterSession = DEFAULT_SESSION,
     store: ArtifactStore | None = None,
     dashboard_url: str | None = None,
     replace_sent: bool = False,
@@ -71,6 +73,7 @@ async def generate(
         organization_id=organization_id,
         website_id=website_id,
         provider=provider,
+        meter=meter,
     ).generate(as_of=as_of)
 
     figures = await assemble(conn, website_id=website_id, plan=plan, as_of=as_of)

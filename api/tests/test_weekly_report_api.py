@@ -500,3 +500,49 @@ def test_the_figures_are_escaped_into_the_html():
     assert "<script>alert(1)</script>" not in html
     assert "&lt;script&gt;" in html
     assert "onerror=alert(1)>" not in html
+
+
+async def test_generating_a_report_from_the_request_path_can_meter_its_spend(
+    client, site
+):
+    """The bug this test exists for.
+
+    `llm_calls` carries a read policy and no write policy, so the RLS-bound
+    request role cannot insert into it. Everything that metered until now ran
+    as the service role in a background job, and "generate my report now" is
+    the first metered call on the request path — with no model configured it
+    never metered at all, so nothing failed and nothing noticed.
+    """
+    from api.ai import deps as ai_deps
+    from api.tests.fake_model import FakeProvider
+
+    website_id, user, org, conn = site
+    ai_deps.set_provider(
+        FakeProvider(
+            responses=lambda payload: {
+                "summary": "Clicks are up.",
+                "priorities": [
+                    {
+                        "ref": finding["ref"],
+                        "title": finding["suggested_title"],
+                        "why": "Worth doing.",
+                        "how": ["Do it."],
+                    }
+                    for finding in payload["findings"]
+                ],
+            }
+        )
+    )
+    try:
+        body = await make_report(client, website_id, user)
+    finally:
+        ai_deps.set_provider(None)
+
+    assert body["fallback_reason"] is None
+    row = await (
+        await conn.execute(
+            "select purpose, status, cost_usd from llm_calls where website_id = %s",
+            (website_id,),
+        )
+    ).fetchone()
+    assert (row["purpose"], row["status"]) == ("weekly_plan", "ok")

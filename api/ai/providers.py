@@ -21,7 +21,8 @@ from __future__ import annotations
 import json
 import logging
 import time
-from dataclasses import dataclass
+from collections.abc import AsyncIterator
+from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Any, Literal, Protocol
 
@@ -218,3 +219,153 @@ def _is_unsupported_output_config(exc: Exception) -> bool:
     if status != 400:
         return False
     return "output_config" in str(exc) or "json_schema" in str(exc)
+
+
+# ---------------------------------------------------------------------------
+# Conversation
+# ---------------------------------------------------------------------------
+# A different shape from `generate`, because a conversation is not one request
+# with one answer: it is a stream of text the customer watches arrive, punctuated
+# by tool calls the application runs and feeds back.
+#
+# The loop itself lives in `api/ai/strategist.py` and is written by hand rather
+# than delegated to the SDK's tool runner. That is a deliberate choice for the
+# three things the runner does not expose: emitting a step to the browser
+# before each tool runs, capping tool calls per customer message, and metering
+# every round against the organisation's budget. It also keeps a beta
+# dependency out of the one endpoint a customer watches live.
+
+
+@dataclass(frozen=True, slots=True)
+class ToolCall:
+    id: str
+    name: str
+    input: dict[str, Any]
+
+
+@dataclass(frozen=True, slots=True)
+class TextDelta:
+    """A fragment of the answer, as it is generated."""
+
+    text: str
+
+
+@dataclass(frozen=True, slots=True)
+class TurnFinished:
+    text: str
+    tool_calls: list[ToolCall]
+    stop_reason: str | None
+    model: str
+    input_tokens: int
+    output_tokens: int
+    cached_input_tokens: int
+    cost_usd: Decimal | None
+    #: The assistant content blocks exactly as returned, to be appended to the
+    #: next request. Thinking blocks travel with them: dropping one mid-tool-
+    #: cycle invalidates the turn it belongs to.
+    content: list[Any] = field(default_factory=list)
+
+
+StreamEvent = TextDelta | TurnFinished
+
+
+class ChatProvider(Protocol):
+    def stream(
+        self,
+        *,
+        system: str,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+    ) -> AsyncIterator[StreamEvent]: ...
+
+
+class AnthropicChatProvider:
+    """Streaming conversation with tools, over the real SDK."""
+
+    name = "anthropic"
+
+    def __init__(
+        self,
+        client: Any,
+        *,
+        tier: Tier = "frontier",
+        tiers: dict[Tier, ModelSpec] | None = None,
+        max_tokens: int = MAX_OUTPUT_TOKENS,
+    ) -> None:
+        self._client = client
+        self._spec = (tiers or TIERS)[tier]
+        self._max_tokens = max_tokens
+
+    @classmethod
+    def from_api_key(cls, api_key: str, **kwargs: Any) -> AnthropicChatProvider:
+        from anthropic import AsyncAnthropic
+
+        return cls(AsyncAnthropic(api_key=api_key), **kwargs)
+
+    async def stream(
+        self,
+        *,
+        system: str,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+    ) -> AsyncIterator[StreamEvent]:
+        request: dict[str, Any] = {
+            "model": self._spec.model,
+            "max_tokens": self._max_tokens,
+            "system": system,
+            "messages": messages,
+        }
+        if self._spec.thinking is not None:
+            request["thinking"] = self._spec.thinking
+        if tools:
+            request["tools"] = tools
+            # `eager_input_streaming` is deliberately off. It exists so large
+            # tool inputs stream as they are generated; every tool here takes a
+            # period, a limit and sometimes a URL, so it would buy nothing and
+            # bring a tolerant parser that can hand back a silently truncated
+            # input.
+
+        try:
+            async with self._client.messages.stream(**request) as stream:
+                async for event in stream:
+                    if (
+                        event.type == "content_block_delta"
+                        and event.delta.type == "text_delta"
+                    ):
+                        yield TextDelta(event.delta.text)
+                message = await stream.get_final_message()
+        except Exception as exc:
+            raise ProviderError(f"{type(exc).__name__}: {exc}") from exc
+
+        if message.stop_reason == "refusal":
+            raise ProviderRefused(f"model refused: {message.stop_details}")
+
+        usage = message.usage
+        cached = int(getattr(usage, "cache_read_input_tokens", None) or 0)
+        input_tokens = int(usage.input_tokens or 0) + cached
+        output_tokens = int(usage.output_tokens or 0)
+        model = message.model or self._spec.model
+
+        yield TurnFinished(
+            text="".join(
+                block.text for block in message.content
+                if getattr(block, "type", None) == "text"
+            ),
+            tool_calls=[
+                ToolCall(id=block.id, name=block.name, input=dict(block.input or {}))
+                for block in message.content
+                if getattr(block, "type", None) == "tool_use"
+            ],
+            stop_reason=message.stop_reason,
+            model=model,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            cached_input_tokens=cached,
+            cost_usd=cost_usd(
+                model,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                cached_input_tokens=cached,
+            ),
+            content=list(message.content),
+        )

@@ -33,7 +33,8 @@ billing and connection-deletion require `admin`.
 user as-is, so it is written for a non-technical reader. Codes that matter:
 `google_needs_reauth`, `google_no_property_match`, `google_insufficient_permission`,
 `plan_limit_exceeded`, `crawl_in_progress`, `ai_budget_exhausted`,
-`site_not_verified`, `email_not_configured`, `invalid_status`.
+`site_not_verified`, `email_not_configured`, `invalid_status`,
+`assistant_unavailable`.
 
 ## Endpoints
 
@@ -116,7 +117,10 @@ POST /websites/{id}/audit/{issue_id}/resolve
 
 ### AI
 ```
-POST /websites/{id}/ai/chat                      (SSE)
+POST   /websites/{id}/ai/chat                    (SSE)
+GET    /websites/{id}/conversations              history + suggested questions
+GET    /websites/{id}/conversations/{cid}        messages, with their tool steps
+DELETE /websites/{id}/conversations/{cid}
 GET  /websites/{id}/plan                         this week's plan + priorities
 GET  /websites/{id}/recommendations              ?status=
 POST /websites/{id}/recommendations/{rid}/dismiss
@@ -131,6 +135,24 @@ returning an empty list, because an empty list reads as "you have none".
 
 Each recommendation carries `prose_source` (`template` or `model`) so the UI
 can label generated wording as generated. The rank beside it is always code.
+
+`ai/chat` is the one streaming endpoint. It emits `data:`-framed JSON events —
+`conversation`, `step` (a tool about to run, with its input), `delta` (a
+fragment of the answer), `done` (with the run's tool steps) and `error`. Two
+consequences worth stating:
+
+- **A mid-answer failure is an `error` EVENT, not a 500.** The status line went
+  out with the first byte, so a browser that gets a stream which simply stops
+  has nothing to show.
+- **The handler opens its own database connection.** FastAPI closes a `yield`
+  dependency before the response body is streamed, so a handler relying on the
+  request connection would find it returned to the pool during the first tool
+  call. It is still the RLS-bound request role, bound to the same user.
+
+`assistant_unavailable` is returned as a 503 before the stream starts when no
+model is configured. There is no template fallback for a conversation: a
+scripted reply pretending to be an analyst is worse than an honest absence,
+and the screen says so rather than answering.
 
 ### Reports and account
 ```

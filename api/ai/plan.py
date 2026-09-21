@@ -32,7 +32,7 @@ from psycopg import AsyncConnection
 from api.adapters.db import fetch_all, fetch_one
 from api.ai.budget import budget_for
 from api.ai.cache import render_prompt
-from api.ai.metering import record_call
+from api.ai.metering import DEFAULT_SESSION, MeterSession, record_call
 from api.ai.prompts import issue_explanation, weekly_plan
 from api.ai.providers import LLMProvider, ProviderError
 from api.ai.validate import validate
@@ -120,8 +120,10 @@ class WeeklyPlanService:
         organization_id: UUID,
         website_id: UUID,
         provider: LLMProvider | None = None,
+        meter: MeterSession = DEFAULT_SESSION,
     ) -> None:
         self._conn = conn
+        self._meter_session = meter
         self._organization_id = organization_id
         self._website_id = website_id
         self._provider = provider
@@ -409,7 +411,7 @@ class WeeklyPlanService:
         generation: Any = None,
     ) -> None:
         await record_call(
-            self._conn,
+            self._meter_session,
             organization_id=self._organization_id,
             website_id=self._website_id,
             purpose=PURPOSE,

@@ -9,6 +9,8 @@
  *  - No organisation id is ever sent. Scope comes from the session.
  */
 
+import { type Frame, parseFrames } from "@/lib/sse";
+
 export const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api/v1";
 
@@ -267,6 +269,37 @@ export interface Report {
   html_url: string;
 }
 
+export interface ConversationStep {
+  tool: string;
+  input: Record<string, unknown>;
+  /** Null where the tool returns one answer rather than a list. */
+  rows: number | null;
+  ms: number;
+  error: string | null;
+}
+
+export interface ConversationMessage {
+  seq: number;
+  role: "user" | "assistant";
+  content: string;
+  steps: ConversationStep[];
+  created_at: string;
+}
+
+export interface ConversationSummary {
+  id: string;
+  title: string | null;
+  message_count: number;
+  created_at: string;
+  last_message_at: string;
+}
+
+export interface Assistant {
+  available: boolean;
+  suggested_questions: string[];
+  conversations: ConversationSummary[];
+}
+
 export const api = {
   me: (token: string) => request<Me>("/auth/me", token),
   listWebsites: (token: string) => request<Website[]>("/websites", token),
@@ -379,6 +412,20 @@ export const api = {
       { method: "POST" },
     ),
 
+  conversations: (token: string, websiteId: string) =>
+    request<Assistant>(`/websites/${websiteId}/conversations`, token),
+
+  conversation: (token: string, websiteId: string, conversationId: string) =>
+    request<{ id: string; title: string | null; messages: ConversationMessage[] }>(
+      `/websites/${websiteId}/conversations/${conversationId}`,
+      token,
+    ),
+
+  deleteConversation: (token: string, websiteId: string, conversationId: string) =>
+    request<void>(`/websites/${websiteId}/conversations/${conversationId}`, token, {
+      method: "DELETE",
+    }),
+
   syncAnalytics: (token: string, websiteId: string) =>
     request<{ status: string; goals_synced: number }>(
       `/websites/${websiteId}/sync/analytics`,
@@ -386,3 +433,60 @@ export const api = {
       { method: "POST" },
     ),
 };
+
+
+/**
+ * Asking the assistant.
+ *
+ * Outside `api` because it is the only call that streams: it hands frames to
+ * a callback as they arrive rather than resolving once with a body. The
+ * answer is rendered as it is written, which is most of what makes a chat
+ * feel like one.
+ */
+export async function askAssistant(
+  token: string,
+  websiteId: string,
+  question: string,
+  conversationId: string | null,
+  onFrame: (frame: Frame) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  const response = await fetch(`${API_BASE}/websites/${websiteId}/ai/chat`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+      Accept: "text/event-stream",
+    },
+    body: JSON.stringify({
+      question,
+      conversation_id: conversationId,
+    }),
+    signal,
+  });
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+    const err = body?.error;
+    throw new ApiError(
+      err?.code ?? "unexpected_error",
+      err?.message ?? "The assistant isn't available right now.",
+      response.status,
+      err?.details ?? {},
+    );
+  }
+  if (!response.body) throw new ApiError("unexpected_error", "No answer came back.", 500);
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const parsed = parseFrames(buffer);
+    buffer = parsed.rest;
+    parsed.events.forEach(onFrame);
+  }
+}

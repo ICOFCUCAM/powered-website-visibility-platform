@@ -677,3 +677,67 @@ begin
 
     delete from plans where id = plan_id;
 end $$;
+
+
+-- ---------------------------------------------------------------------------
+-- 21. A conversation is tenant data like any other. The Strategist reads a
+--     customer's whole dataset through typed tools, so the one thing that
+--     must not be special about it is its storage.
+-- ---------------------------------------------------------------------------
+reset role;
+insert into conversations (id, organization_id, website_id, title) values
+  ('c0117e00-0000-0000-0000-00000000000a','11111111-1111-1111-1111-111111111111',
+   '5117e000-0000-0000-0000-00000000000a','Why did my traffic fall?'),
+  ('c0117e00-0000-0000-0000-00000000000b','22222222-2222-2222-2222-222222222222',
+   '5117e000-0000-0000-0000-00000000000b','Their private question')
+on conflict (id) do nothing;
+
+insert into conversation_messages (organization_id, conversation_id, seq, role,
+                                   content)
+values ('22222222-2222-2222-2222-222222222222',
+        'c0117e00-0000-0000-0000-00000000000b', 1, 'user',
+        'Something commercially sensitive')
+on conflict (conversation_id, seq) do nothing;
+
+set role app_user;
+set app.user_id = 'aaaaaaaa-0000-0000-0000-000000000001';
+do $$
+declare n int; t text;
+begin
+    select count(*), min(title) into n, t from conversations;
+    if n <> 1 or t <> 'Why did my traffic fall?' then
+        raise exception 'CHAT FAIL: org A sees % conversation(s): %', n, t;
+    end if;
+    raise notice 'PASS  a conversation is visible only to its own organisation';
+
+    select count(*) into n from conversation_messages;
+    if n <> 0 then
+        raise exception 'CHAT FAIL: org A read % of org B''s messages', n;
+    end if;
+    raise notice 'PASS  another organisation''s chat messages are unreadable';
+end $$;
+
+
+-- ---------------------------------------------------------------------------
+-- 22. The spend log is written by the system, never by a client role. A
+--     browser-reachable role that could insert here could inflate its own
+--     recorded spend and pollute the cost-per-feature figures that pricing
+--     decisions come from. Reading its own remains allowed.
+-- ---------------------------------------------------------------------------
+do $$
+begin
+    begin
+        insert into llm_calls (organization_id, purpose, model, model_provider,
+                               cost_usd, derived_from)
+        values ('11111111-1111-1111-1111-111111111111','strategist_chat','m',
+                'anthropic', 0, '{"x":1}'::jsonb);
+        raise exception 'METER FAIL: a client role wrote the spend log';
+    exception when insufficient_privilege then
+        raise notice 'PASS  a client role cannot write the spend log';
+    end;
+
+    perform count(*) from llm_calls;
+    raise notice 'PASS  a client role can still read its own metering';
+end $$;
+reset role;
+reset app.user_id;

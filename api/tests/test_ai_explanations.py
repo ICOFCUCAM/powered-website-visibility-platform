@@ -16,6 +16,7 @@ import pytest
 from api.ai.budget import budget_for
 from api.ai.cache import cache_key
 from api.ai.explain import ExplanationService
+from api.ai.metering import reusing
 from api.ai.prompts import issue_explanation
 from api.ai.providers import ProviderError
 from api.analysis.catalogue import seed
@@ -41,8 +42,14 @@ async def org(service_conn, two_tenants):
 
 
 def service(conn, organization_id, provider=None) -> ExplanationService:
+    # Metering goes through the service role in production (llm_calls has no
+    # write policy). These tests already hold a service connection, so they
+    # lend it rather than making the metering open a second one.
     return ExplanationService(
-        conn, organization_id=organization_id, provider=provider
+        conn,
+        organization_id=organization_id,
+        provider=provider,
+        meter=reusing(conn),
     )
 
 
