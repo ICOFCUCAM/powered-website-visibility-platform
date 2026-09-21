@@ -63,17 +63,17 @@ review features.
 
 The granted set can be narrower than the requested set — Google lets users
 uncheck individual permissions. Always reconcile against the `scope` field in
-the token response, store it in `google_accounts.granted_scopes`, and gate
+the token response, store it in `connections.granted_scopes`, and gate
 features on what was actually granted, never on what was asked for.
 
 ## 2. The flow
 
 ```
 Browser                    API                        Google
-   |  GET /v1/google/oauth/start?site_id=&services=
+   |  GET /v1/google/oauth/start?website_id=&services=
    |------------------------------------->|
    |                                       | build state (signed, 10-min TTL,
-   |                                       |   binds org_id + site_id + nonce)
+   |                                       |   binds organization_id + website_id + nonce)
    |                                       | build PKCE verifier/challenge
    |  302 to accounts.google.com ----------|
    |------------------------------------------------------>|
@@ -85,7 +85,7 @@ Browser                    API                        Google
    |                                       | exchange code -> tokens
    |                                       | id_token -> google_sub, email
    |                                       | encrypt refresh token -> vault
-   |                                       | upsert google_accounts
+   |                                       | upsert connections
    |                                       | enqueue discovery job
    |  302 /onboarding/choose?account=      |
 ```
@@ -95,7 +95,7 @@ Rules that keep this safe:
 - `access_type=offline`, `prompt=consent` **only** when no refresh token is
   held for that `google_sub`. Forcing the consent screen on every connect is a
   common bug that re-prompts returning users for no reason.
-- `state` is a signed, short-lived token binding org, site and nonce. Never a
+- `state` is a signed, short-lived token binding org, website and nonce. Never a
   raw UUID, never reusable.
 - Key the account on `google_sub`, never on email — users change their email
   and you would silently fork one account into two.
@@ -111,12 +111,12 @@ One job, immediately after consent, fanning out across every granted service:
 
 | Service | Call | Yields |
 | --- | --- | --- |
-| Search Console | `sites.list` | property URIs + permission level |
+| Search Console | `websites.list` | property URIs + permission level |
 | Analytics | `accountSummaries.list` | account → property tree |
 | Business Profile | `accounts.list` → `locations.list` | locations |
 | Ads | `customers.listAccessibleCustomers` | customer ids |
 
-Everything lands in `google_resources` with `matched_hosts` normalised:
+Everything lands in `connection_properties` with `matched_hosts` normalised:
 
 | Resource | `matched_hosts` |
 | --- | --- |
@@ -124,10 +124,10 @@ Everything lands in `google_resources` with `matched_hosts` normalised:
 | `https://www.example.com/` | `{www.example.com}` |
 | GA4 `properties/123` | from the property's configured stream URLs |
 
-Auto-match proposes a link when the resource's hosts intersect the site's
+Auto-match proposes a link when the resource's hosts intersect the website's
 registrable domain. Prefer a domain property over a URL-prefix property when
 both exist — it has complete coverage. Present the proposal pre-ticked and
-always overridable; `site_google_links.link_method` records `auto` vs
+always overridable; `website_connections.link_method` records `auto` vs
 `user_selected` so a wrong match is diagnosable months later.
 
 ### Failure states the wizard must handle
@@ -140,7 +140,7 @@ left to the happy path:
 | No GSC property matches the domain | Explain that Google needs to verify ownership first; link the verification docs; offer to continue with crawl-only analysis and reconnect later |
 | Property exists but permission is `siteUnverifiedUser` | Data is unavailable; tell the user which Google account owns it and offer to switch account |
 | Several matching properties | List them with permission level and coverage; pre-tick the domain property |
-| User signed in with the wrong Google account | Show the connected email prominently with a one-click "Use a different account" that adds a second `google_accounts` row rather than replacing the first |
+| User signed in with the wrong Google account | Show the connected email prominently with a one-click "Use a different account" that adds a second `connections` row rather than replacing the first |
 | Analytics granted, no GA4 property | Note that Universal Analytics is not supported; continue without it |
 | GA4 property found, no goal event chosen | Blocking step **for outcome reporting only** — traffic data still flows; the dashboard shows "outcomes not configured" rather than a fabricated conversion rate |
 | GBP not yet approved for the platform | Card renders "Coming soon"; never a button that fails |
@@ -166,11 +166,11 @@ only yesterday — Google restates recent days, and data lags 2–3 days. Re-fet
 
 Quota discipline: paginate at 25,000 rows, respect per-minute and per-day
 limits per property, back off exponentially on 429, and record `quota_hits` on
-`google_sync_runs` so throttling is visible rather than mysterious. Backfills
+`sync_runs` so throttling is visible rather than mysterious. Backfills
 run at low priority on their own worker pool so one new agency account cannot
 starve every existing tenant's nightly sync.
 
-Every run writes a `google_sync_runs` row. A partial sync is recorded as
+Every run writes a `sync_runs` row. A partial sync is recorded as
 `partial` with its range, so gaps in a chart are explainable and re-runnable
 instead of permanent.
 
@@ -197,7 +197,7 @@ Hub's public contract is:
 
 - `GET /v1/hub/connections` — what is connected, per service, per account
 - `GET /v1/hub/resources?service=` — everything discovered
-- `POST /v1/hub/links` — attach a resource to a site
+- `POST /v1/hub/links` — attach a resource to a website
 - `GET /v1/hub/data/search-analytics` — normalised, already-correct rollups
 - webhook `hub.sync.completed` — fired when a backfill or daily sync lands
 

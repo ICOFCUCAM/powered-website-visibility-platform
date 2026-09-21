@@ -8,7 +8,7 @@ metering are enforced in exactly one place.
 
 Bearer JWT from the identity provider. Middleware resolves `user_id`, loads
 org memberships, and binds the org scope for the request. Handlers never accept
-an `org_id` from the client — it is derived from the authenticated session and
+an `organization_id` from the client — it is derived from the authenticated session and
 the requested resource, then checked. Database connections additionally set
 `app.user_id` so RLS applies as defence in depth even if a handler forgets a
 filter.
@@ -37,108 +37,101 @@ user as-is, so it is written for a non-technical reader. Codes that matter:
 
 ## Endpoints
 
-### Sites
+Base URL `/api/v1`, per the V1 spec (§30).
 
+### Auth
 ```
-POST   /v1/sites                      {domain} → normalises, dedupes, creates
-GET    /v1/sites
-GET    /v1/sites/{id}                 includes onboarding_state, latest score
-PATCH  /v1/sites/{id}                 display_name, timezone, crawl_schedule
-DELETE /v1/sites/{id}                 soft delete (archived_at)
-GET    /v1/sites/{id}/overview        the Home screen payload, one call
+POST /auth/register
+POST /auth/login
+POST /auth/logout
+GET  /auth/me
 ```
 
-`/overview` returns the dashboard in a single request: current score plus
-delta, attention counts by severity, the top recommendation, 28-day
-performance with comparison, and recent changes. The home screen must not
-assemble itself from nine round trips.
-
-### Google Hub
-
+### Websites
 ```
-GET    /v1/hub/connections                     per account, per service, status
-GET    /v1/google/oauth/start                  ?site_id=&services=  → 302
-GET    /v1/google/oauth/callback                → 302 back into the wizard
-DELETE /v1/hub/accounts/{id}                   revokes with Google, purges vault
-POST   /v1/hub/accounts/{id}/rediscover
-GET    /v1/hub/resources?service=&site_id=     includes auto-match proposals
-POST   /v1/hub/links                           {site_id, resource_id, service}
-DELETE /v1/hub/links/{id}
-POST   /v1/hub/links/{id}/backfill             idempotent; returns existing run
-GET    /v1/hub/sync-runs?site_id=&service=
-GET    /v1/sites/{id}/ga4/events               candidate GA4 events to map
-POST   /v1/sites/{id}/ga4/goals                {event_name, label, goal_kind}
+POST   /websites                 {url} → normalise, validate, dedupe, create
+GET    /websites
+GET    /websites/{id}
+DELETE /websites/{id}
+POST   /websites/{id}/crawl      409 if a crawl is already running
+POST   /websites/{id}/verify     ownership check (GSC linkage, or DNS/file token)
 ```
+
+### Google
+```
+GET    /google/connect           ?website_id=&services=  → 302 to Google
+GET    /google/callback          → 302 back into the wizard
+GET    /google/connections
+DELETE /google/connections/{id}  revokes with Google, purges the vault row
+```
+
+### Properties
+```
+GET  /google/search-console/properties        includes auto-match proposals
+POST /google/search-console/properties/{id}/connect
+GET  /google/analytics/properties
+POST /google/analytics/properties/{id}/connect
+GET  /websites/{id}/analytics/events          candidate GA4 key events
+POST /websites/{id}/analytics/goals           {event_name, label, goal_kind}
+```
+
+### Dashboard
+```
+GET /websites/{id}/dashboard
+```
+
+One call returns the whole Home screen: Visibility Health score with its
+components and month-over-month delta, Google Search totals, Analytics totals,
+and the top opportunities. The home screen must not assemble itself from nine
+round trips.
 
 ### Search performance
-
 ```
-GET /v1/sites/{id}/performance?from=&to=&compare=
-GET /v1/sites/{id}/queries?from=&to=&order_by=&limit=&cursor=
-GET /v1/sites/{id}/pages?from=&to=&order_by=&limit=&cursor=
-GET /v1/sites/{id}/queries/{hash}/history?from=&to=
-GET /v1/sites/{id}/anonymised-share?from=&to=
+GET /websites/{id}/search-performance   ?from=&to=&compare=&country=&device=
+GET /websites/{id}/queries              ?from=&to=&order_by=&limit=&cursor=
+GET /websites/{id}/pages                ?from=&to=&order_by=&limit=&cursor=
+GET /websites/{id}/queries/{hash}/history
 ```
 
-Every response carrying query- or page-sliced totals also carries
-`anonymised_clicks` for the window, so the UI can explain the gap against the
-site totals instead of leaving the user to find it.
+Every response that slices by query or page also carries `anonymised_clicks`
+for the window, so the UI can explain the gap against site totals rather than
+leaving the user to discover it.
 
-### Crawls and pages
-
+### Analytics
 ```
-POST   /v1/sites/{id}/crawls           {trigger:"manual"} → 409 if one is running
-GET    /v1/sites/{id}/crawls
-GET    /v1/crawls/{id}                 live progress: discovered/fetched/rendered
-DELETE /v1/crawls/{id}                 cancel
-GET    /v1/sites/{id}/pages/{page_id}  latest snapshot + issues + GSC history
-GET    /v1/sites/{id}/pages/{page_id}/history
+GET /websites/{id}/analytics            ?from=&to=&dimension=
+GET /websites/{id}/analytics/landing-pages
 ```
 
-### Issues, plan, recommendations
-
+### Audit
 ```
-GET    /v1/sites/{id}/issues?status=&category=&severity=&cursor=
-GET    /v1/issues/{id}                 evidence, explanation, observation history
-POST   /v1/issues/{id}/dismiss         {reason}
-POST   /v1/issues/{id}/snooze          {until}
-POST   /v1/issues/{id}/mark-applied    queues a verification crawl
-GET    /v1/sites/{id}/plan/current
-POST   /v1/sites/{id}/plan/regenerate  rate-limited, budget-checked
-PATCH  /v1/recommendations/{id}        {status}
+GET  /websites/{id}/audit               counts by severity + grouped issues
+GET  /websites/{id}/audit/{issue_id}    evidence, explanation, affected pages
+POST /websites/{id}/audit/{issue_id}/resolve
 ```
 
-`mark-applied` is the hinge of the loop: it moves the issue to `applied`, writes
-a `fix_actions` row, and enqueues a single-URL verification crawl that flips it
-to `verified` or `regressed`. Nothing else in the API changes an issue's truth.
+`resolve` is the hinge of the loop: it sets the issue to `applied`, writes an
+`actions` row, and enqueues a single-URL verification crawl that flips it to
+`verified` or `regressed`. Nothing else in the API changes an issue's truth.
 
-### Keywords, scores, reports
-
+### AI
 ```
-GET    /v1/sites/{id}/keywords?tracked=
-POST   /v1/sites/{id}/keywords         {phrases[], source}
-POST   /v1/sites/{id}/keywords/suggest {business_description}
-DELETE /v1/sites/{id}/keywords/{kid}
-GET    /v1/sites/{id}/score?from=&to=  history under one scoring_version
-GET    /v1/sites/{id}/reports
-POST   /v1/sites/{id}/reports/{rid}/send
-GET    /v1/reports/{rid}/html          signed, expiring URL
+POST /websites/{id}/ai/chat                      (SSE)
+GET  /websites/{id}/recommendations              ?status=
+POST /websites/{id}/recommendations/{rid}/dismiss
+POST /websites/{id}/recommendations/{rid}/complete
 ```
 
-### Strategist
-
+### Reports and account
 ```
-POST   /v1/sites/{id}/strategist/messages   {message, conversation_id?}  (SSE)
-GET    /v1/sites/{id}/strategist/conversations
+GET    /websites/{id}/reports
+POST   /websites/{id}/reports/{rid}/send
+GET    /reports/{rid}/html            signed, expiring URL
+DELETE /account                       deletes the account and its data
 ```
-
-Streams tokens and tool-call progress ("checking your top queries…") so a
-multi-second answer does not look like a hang.
 
 ### Internal
-
-Not exposed publicly; service-token auth, separate router:
-
+Service-token auth, separate router, never publicly routed:
 ```
 POST /internal/jobs/crawl/{crawl_id}/lease
 POST /internal/jobs/sync/dispatch
@@ -150,7 +143,7 @@ POST /internal/partitions/ensure
 - Cursor pagination everywhere (opaque cursor, `limit` ≤ 200). Offsets over
   partitioned fact tables get slow exactly when a customer's data gets
   interesting.
-- Dates are `YYYY-MM-DD` in the **site's** timezone; timestamps are UTC ISO-8601.
+- Dates are `YYYY-MM-DD` in the **website's** timezone; timestamps are UTC ISO-8601.
 - `POST` endpoints that start work are idempotent within a window and return
   the in-flight resource rather than creating a duplicate.
 - Rate limits per org, returned in headers, surfaced as `plan_limit_exceeded`

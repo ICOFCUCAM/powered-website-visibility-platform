@@ -40,7 +40,7 @@ position 18 it is completely normal. A rule that flags low CTR without a
 position baseline generates hundreds of non-issues, and a user who learns to
 ignore the recommendation list has left the loop for good.
 
-`expected_ctr(position)` is derived per site from that site's own
+`expected_ctr(position)` is derived per website from that website's own
 `gsc_query_daily`, bucketed by integer position over the trailing 90 days,
 falling back to a global curve when a bucket has fewer than 50 impressions:
 
@@ -49,7 +49,7 @@ position:  1     2     3     4     5     6     7     8     9    10   11-20
 ctr:      .27   .15   .10   .07   .05   .04   .03   .025  .02  .018  .01
 ```
 
-Per-site derivation matters because branded and local niches have wildly
+Per-website derivation matters because branded and local niches have wildly
 different curves from the global average. A church's own name is a 70% CTR at
 position 1; a comparison query is 12%.
 
@@ -63,7 +63,7 @@ Seeded into `issue_types`. `w` is the weight inside its scorecard component.
 | --- | --- | --- | --- |
 | `page_5xx` | critical | 5 | Status ≥ 500 |
 | `page_404_internal_link` | critical | 4 | Internally linked URL returns 404 |
-| `robots_blocks_crawl` | critical | 5 | robots.txt disallows the whole site |
+| `robots_blocks_crawl` | critical | 5 | robots.txt disallows the whole website |
 | `noindex_on_valuable_page` | critical | 5 | `noindex` on a page with GSC impressions |
 | `redirect_chain` | medium | 2 | Chain length ≥ 3 |
 | `canonical_to_noncanonical` | high | 3 | Canonical target is itself canonicalised elsewhere |
@@ -129,7 +129,7 @@ Authority is excluded until backlink data is licensed, and the UI shows it as
 
 Each component is `100 - penalty`, where penalty sums the weights of open
 issues in that category, normalised by the number of pages evaluated so a
-1,000-page site is not punished for having more of everything:
+1,000-page website is not punished for having more of everything:
 
 ```
 penalty = min(100, 100 * Σ(w_i * severity_multiplier_i * affected_i / evaluated_i) / Σ(w_i))
@@ -138,7 +138,7 @@ severity_multiplier = {critical: 1.0, high: 0.7, medium: 0.4, low: 0.15, info: 0
 
 `google_visibility` is not penalty-based — it is measured, blending 28-day
 click trend, impression trend, average position change and the share of
-tracked keywords in the top 10, each normalised against the site's own 90-day
+tracked keywords in the top 10, each normalised against the website's own 90-day
 history rather than a cross-customer benchmark.
 
 ### Rules for changing the scoring model

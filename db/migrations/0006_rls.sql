@@ -1,7 +1,7 @@
 -- 0006_rls.sql
 -- Row-level security and partition management.
 --
--- Every tenant table carries org_id directly, so each policy is one indexed
+-- Every tenant table carries organization_id directly, so each policy is one indexed
 -- predicate instead of a join chain. `secrets` has NO policies and NO grants:
 -- refresh tokens are unreachable from any client role by construction.
 
@@ -30,8 +30,8 @@ end $$;
 create or replace function app.is_org_member(target_org uuid) returns boolean
 language sql stable security definer set search_path = public, app as $$
     select exists (
-        select 1 from org_members m
-        where m.org_id = target_org
+        select 1 from organization_members m
+        where m.organization_id = target_org
           and m.user_id = app.current_user_id()
     );
 $$;
@@ -39,50 +39,50 @@ $$;
 create or replace function app.can_write_org(target_org uuid) returns boolean
 language sql stable security definer set search_path = public, app as $$
     select exists (
-        select 1 from org_members m
-        where m.org_id = target_org
+        select 1 from organization_members m
+        where m.organization_id = target_org
           and m.user_id = app.current_user_id()
           and m.role in ('owner','admin','member')
     );
 $$;
 
--- Apply the standard policy set to every tenant table that has an org_id.
+-- Apply the standard policy set to every tenant table that has an organization_id.
 do $$
 declare t text;
 begin
     foreach t in array array[
-        'sites','google_accounts','google_resources','site_google_links',
-        'ga4_goal_events','google_sync_runs','gsc_daily_totals','gsc_query_daily',
+        'websites','connections','connection_properties','website_connections',
+        'ga4_goal_events','sync_runs','gsc_daily_totals','gsc_query_daily',
         'gsc_page_daily','gsc_query_page_daily','ga4_daily','ga4_page_daily',
         'ga4_goal_daily','crawls','pages','page_snapshots','psi_samples',
         'issues','keywords','score_snapshots','plans','recommendations',
-        'fix_actions','reports'
+        'actions','reports'
     ] loop
         execute format('alter table %I enable row level security', t);
         execute format('alter table %I force row level security', t);
         execute format(
-            'create policy %I on %I for select using (app.is_org_member(org_id))',
+            'create policy %I on %I for select using (app.is_org_member(organization_id))',
             t || '_read', t);
         execute format(
-            'create policy %I on %I for all using (app.can_write_org(org_id))
-                                        with check (app.can_write_org(org_id))',
+            'create policy %I on %I for all using (app.can_write_org(organization_id))
+                                        with check (app.can_write_org(organization_id))',
             t || '_write', t);
     end loop;
 end $$;
 
 -- Org and membership rows are visible to members of that org only.
-alter table orgs enable row level security;
-create policy orgs_read on orgs for select using (app.is_org_member(id));
+alter table organizations enable row level security;
+create policy orgs_read on organizations for select using (app.is_org_member(id));
 
-alter table org_members enable row level security;
-create policy org_members_read on org_members for select
-    using (app.is_org_member(org_id));
+alter table organization_members enable row level security;
+create policy org_members_read on organization_members for select
+    using (app.is_org_member(organization_id));
 
-alter table profiles enable row level security;
-create policy profiles_self on profiles for select
+alter table users enable row level security;
+create policy profiles_self on users for select
     using (id = app.current_user_id());
 
--- Tables reached only through a parent (no org_id of their own) stay closed to
+-- Tables reached only through a parent (no organization_id of their own) stay closed to
 -- client roles and are read through the API, which holds the service role.
 alter table crawl_frontier     enable row level security;
 alter table page_links         enable row level security;

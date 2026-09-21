@@ -4,14 +4,14 @@
 -- there is no "what changed", which is the product.
 --
 -- Raw HTML never enters Postgres. It goes to object storage keyed by
---   {site_id}/{crawl_id}/{url_hash}.html.gz
--- and only the key is stored here. A 500-page site crawled weekly is otherwise
+--   {website_id}/{crawl_id}/{url_hash}.html.gz
+-- and only the key is stored here. A 500-page website crawled weekly is otherwise
 -- millions of rows of text nobody queries.
 
 create table crawls (
     id              uuid primary key default gen_random_uuid(),
-    org_id          uuid not null references orgs(id)  on delete cascade,
-    site_id         uuid not null references sites(id) on delete cascade,
+    organization_id          uuid not null references organizations(id)  on delete cascade,
+    website_id         uuid not null references websites(id) on delete cascade,
     status          text not null default 'queued'
                          check (status in ('queued','running','completed','failed','cancelled')),
     trigger         text not null
@@ -32,7 +32,7 @@ create table crawls (
     -- Set when a worker dies mid-crawl; a supervisor re-leases the frontier.
     heartbeat_at    timestamptz
 );
-create index on crawls (site_id, queued_at desc);
+create index on crawls (website_id, queued_at desc);
 create index on crawls (status) where status in ('queued','running');
 
 -- The frontier IS the queue. Kept in Postgres rather than Redis so that a crawl
@@ -56,11 +56,11 @@ create table crawl_frontier (
 create index on crawl_frontier (crawl_id, depth) where state = 'pending';
 create index on crawl_frontier (leased_until) where state = 'leased';
 
--- Stable per-URL identity across every crawl of a site.
+-- Stable per-URL identity across every crawl of a website.
 create table pages (
     id              uuid primary key default gen_random_uuid(),
-    org_id          uuid  not null references orgs(id)  on delete cascade,
-    site_id         uuid  not null references sites(id) on delete cascade,
+    organization_id          uuid  not null references organizations(id)  on delete cascade,
+    website_id         uuid  not null references websites(id) on delete cascade,
     url             text  not null,
     url_hash        bytea not null,
     path            text  not null,
@@ -71,16 +71,16 @@ create table pages (
     is_indexable    boolean,
     -- Set when a crawl completes without encountering the URL.
     gone_at         timestamptz,
-    unique (site_id, url_hash)
+    unique (website_id, url_hash)
 );
-create index on pages (site_id) where gone_at is null;
+create index on pages (website_id) where gone_at is null;
 create index on pages using gin (path gin_trgm_ops);
 
 -- Append-only observation. Partitioned monthly by fetched_at.
 create table page_snapshots (
     id              uuid not null default gen_random_uuid(),
-    org_id          uuid not null,
-    site_id         uuid not null,
+    organization_id          uuid not null,
+    website_id         uuid not null,
     page_id         uuid not null,
     crawl_id        uuid not null,
     fetched_at      timestamptz not null,
@@ -134,14 +134,14 @@ create table page_snapshots (
 
 create index on page_snapshots (page_id, fetched_at desc);
 create index on page_snapshots (crawl_id);
-create index on page_snapshots (site_id, fetched_at desc);
+create index on page_snapshots (website_id, fetched_at desc);
 
 -- Internal link graph, per crawl. Needed for the internal-linking
 -- recommendation and for orphan-page detection. External links are stored only
 -- where they are broken or nofollow-relevant, to keep the table bounded.
 create table page_links (
     crawl_id      uuid  not null references crawls(id) on delete cascade,
-    site_id       uuid  not null,
+    website_id       uuid  not null,
     from_page_id  uuid  not null,
     to_url_hash   bytea not null,
     to_url        text  not null,
@@ -159,8 +159,8 @@ create index on page_links (crawl_id) where status_code >= 400;
 -- representatives (home, one article, one category, one contact) per crawl.
 create table psi_samples (
     id            uuid primary key default gen_random_uuid(),
-    org_id        uuid not null,
-    site_id       uuid not null references sites(id) on delete cascade,
+    organization_id        uuid not null,
+    website_id       uuid not null references websites(id) on delete cascade,
     crawl_id      uuid references crawls(id) on delete set null,
     page_id       uuid,
     url           text not null,
@@ -175,4 +175,4 @@ create table psi_samples (
     raw_key       text,
     collected_at  timestamptz not null default now()
 );
-create index on psi_samples (site_id, collected_at desc);
+create index on psi_samples (website_id, collected_at desc);

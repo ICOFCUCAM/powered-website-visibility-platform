@@ -95,27 +95,27 @@ advertising intelligence, public API, enterprise accounts.
 - **No backlink or competitor metrics.** They require a licensed link index.
   Ship the module when the contract is signed, not before.
 - **No SERP rank scraping.** GSC gives real position data for the user's own
-  site, free and within terms. Rank tracking against live SERPs is a separate
+  website, free and within terms. Rank tracking against live SERPs is a separate
   product with a different cost and risk posture.
 - **No traffic estimates for third-party domains.** Modelled figures are
   routinely off by an order of magnitude.
 - **No auto-publishing of generated content.** Drafts land in a review state and
   there is no code path that publishes without a human.
-- **No write access to user sites in v1.** The `[Fix]` button ships in v3, with
+- **No write access to user websites in v1.** The `[Fix]` button ships in v3, with
   diff preview, one-click revert and post-change verification.
 
 ## Business model
 
 | Tier | Price | Shape |
 | --- | --- | --- |
-| Free | £0 | 1 site, 100 crawled pages, weekly crawl, 10 tracked keywords |
-| Professional | $29–$79/mo | 5 sites, 2,000 pages, daily GSC sync, AI consultant, full history |
-| Agency | $149–$499/mo | 25+ sites, client dashboards, white-label reports, team seats |
+| Free | £0 | 1 website, 100 crawled pages, weekly crawl, 10 tracked keywords |
+| Professional | $29–$79/mo | 5 websites, 2,000 pages, daily GSC sync, AI consultant, full history |
+| Agency | $149–$499/mo | 25+ websites, client dashboards, white-label reports, team seats |
 | Enterprise | Custom | SSO, SLA, API, dedicated crawl capacity |
 
-Page caps and AI budgets are enforced per organisation in `orgs.plan` and
+Page caps and AI budgets are enforced per organisation in `organizations.plan` and
 metered through `llm_calls` (see [06-ai-layer.md](06-ai-layer.md)). One agency
-user crawling forty sites must not cost more than their subscription.
+user crawling forty websites must not cost more than their subscription.
 
 ## The Google Hub
 

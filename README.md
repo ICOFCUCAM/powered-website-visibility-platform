@@ -1,7 +1,7 @@
 # Website Visibility Platform
 
 An AI-powered website visibility platform. It does not stop at telling an owner
-what is wrong with their site — it closes the loop:
+what is wrong with their website — it closes the loop:
 
 ```
 Discover → Diagnose → Recommend → Fix → Measure → Repeat
@@ -27,7 +27,9 @@ describes.
 | [07-ui.md](docs/07-ui.md) | Screen-by-screen specification |
 | [08-structure.md](docs/08-structure.md) | Repository layout, services, deployment |
 | [09-mvp-sequence.md](docs/09-mvp-sequence.md) | Build order with acceptance criteria |
-| [10-decisions.md](docs/10-decisions.md) | Decisions taken, and the ones still open |
+| [10-decisions.md](docs/10-decisions.md) | Locked decisions, and the ones still open |
+| [11-expansion.md](docs/11-expansion.md) | Seams for everything deliberately not in V1 |
+| [12-v1-conformance.md](docs/12-v1-conformance.md) | Section-by-section against the V1 spec |
 
 ## Verifying the schema
 
@@ -41,6 +43,10 @@ PASS  anonymised gap surfaced: 60 clicks withheld by Google (60 percent)
 PASS  frontier leased 2 of 3, and a dead lease was reclaimed
 PASS  second active search_console link rejected
 PASS  historical unlinked row still permitted
+PASS  applied action without before_state rejected
+PASS  applied action with before_state accepted
+PASS  enabled score weights total 1.00 with 2 component(s) awaiting a data source
+PASS  standing approval restricted to reversible capabilities
 ```
 
 Each test exercises a claim the design depends on rather than the ORM's ability

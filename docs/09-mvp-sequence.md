@@ -1,130 +1,222 @@
 # 09 — MVP build sequence
 
-Ordered so that each milestone is demonstrable and the riskiest external
-dependency starts first. Each has an acceptance test that a person can run.
+Ordered so that each milestone is demonstrable, the longest-lead external
+dependency starts first, and the AI arrives as an interpretation layer over
+accumulated evidence rather than a feature looking for something to say.
 
-## M0 — Day one, in parallel with everything
+```
+M0  Google OAuth + compliance
+M1  Foundation + Supabase
+M2  Google Hub
+M3  Search Console
+M4  GA4
+M5  Website crawler
+M6  SEO analysis
+M7  Unified dashboard
+M8  Weekly report
+M9  AI Strategist
+```
 
-**Google Cloud project, OAuth client, privacy policy, verification submitted.**
+---
 
-Not code. It is first because it is the longest-lead item in the project:
-sensitive-scope verification takes weeks and bounces at least once. Build
-against test users while it is in review.
+## M0 — Google OAuth and compliance
 
-*Done when:* consent screen configured, verification submitted, 100-test-user
-cap understood and acceptable for the alpha.
+Not code, and not only the verification submission. The consent experience is
+**designed and frozen here**, because Google reviews the whole story and
+because rewriting it later means re-review.
 
-## M1 — Foundations
+Freeze in M0:
 
-Migrations `0001`–`0006` applied. Auth, orgs, membership, site creation.
-FastAPI skeleton with the dependency chain that binds org scope. Next.js shell
-with sign-in.
+- [ ] OAuth consent-screen copy, app name, support email, logo
+- [ ] The exact scope list, and a written justification for each one
+- [ ] Privacy policy, published on the verified domain that owns the client
+- [ ] Terms of Service
+- [ ] Google API Services User Data Policy disclosure, including the Limited
+      Use statement
+- [ ] Data retention and deletion policy, matching what the code will do
+- [ ] Disconnect and revocation behaviour: what is revoked, what is purged,
+      what is retained, and what the user is told
+- [ ] Test-user procedure while capped at 100 users
+- [ ] A demo account for Google's reviewers, with data in it
+- [ ] Screen recording of the full OAuth flow
+- [ ] Screenshots of every screen that displays Google data
 
-*Done when:* two users in two orgs cannot see each other's sites, proven by a
-test that queries as each and asserts empty.
+The story the review must see, in one line:
 
-## M2 — Google Hub, end to end
+> Connect Google → choose your property → we read your data → we analyse it →
+> you can disconnect at any time.
 
-OAuth with PKCE, token vault, discovery across GSC and GA4, host matching,
-link creation, 16-month backfill, nightly incremental, sync bookkeeping. The
-Hub screen and the first three wizard steps.
+No unnecessary scopes. `webmasters.readonly` and `analytics.readonly` only;
+`business.manage` is not requested until phase 3, and asking for it early would
+widen the review surface for a feature that does not exist yet.
 
-*Done when:* a real user connects a real Google account and, within ten
-minutes, the API returns 16 months of daily clicks and impressions that
-**reconcile with what they see in the Search Console UI** — including the
+*Done when:* verification is submitted, and every artefact above exists in the
+repository rather than in someone's head.
+
+## M1 — Foundation and Supabase
+
+Migrations `0001`–`0007` applied. Supabase project provisioned with Auth,
+Postgres and Storage. FastAPI skeleton with the dependency chain that binds org
+scope. Next.js shell with sign-in.
+
+Portability is a constraint from the first commit: Supabase-specific logic
+lives in an adapter layer (`api/adapters/`), never in domain services. The
+domain layer sees a repository interface and plain SQL. Auth is consumed as
+"verify this JWT, give me a user id", not as a Supabase SDK sprinkled through
+handlers.
+
+*Done when:* two users in two organizations cannot see each other's websites, proven by a
+test that queries as each and asserts empty — and `grep -r supabase api/domain/`
+returns nothing.
+
+## M2 — Google Hub
+
+The bounded module: OAuth with PKCE, token vault, connection and resource
+discovery, host matching, link creation, status and re-auth handling, the Hub
+screen, and wizard steps 1–3.
+
+No Search Console *data* yet. This milestone proves the connection layer alone,
+which is what makes the Hub extractable later.
+
+*Done when:* a real user connects a real Google account and the Hub screen
+shows their discovered properties with permission levels, correctly auto-matched
+to the website — and the import-boundary check in CI passes.
+
+## M3 — Search Console
+
+Backfill of 16 months, nightly incremental with a trailing re-fetch window,
+quota handling, sync bookkeeping, and the correct-aggregation views.
+
+*Done when:* the API returns 16 months of daily clicks and impressions that
+**reconcile with what the user sees in the Search Console UI**, including the
 anonymised-clicks gap being displayed rather than hidden.
 
-This is the milestone that proves the product's premise. Everything after it
-is comparatively conventional.
+This is the milestone that proves the product's premise.
 
-## M3 — Crawler
+## M4 — GA4
+
+Property discovery, the goal-event mapping step, daily and page-level sync.
+
+*Done when:* a user maps `contact_form_submit` as their goal and sees outcomes
+per landing page — and a user who maps nothing sees "outcomes not configured"
+rather than a fabricated conversion rate.
+
+## M5 — Website crawler
 
 robots and sitemap seeding, Postgres frontier, fetch workers with host rate
-limiting, render escalation, extraction into `page_snapshots`, link graph, raw
-storage, crawl progress API, wizard step 4.
+limiting, render escalation, extraction into `page_snapshots` plus the
+versioned extraction document, link graph, raw storage, progress API, wizard
+step 4.
 
-*Done when:* a 500-page site crawls within 20 minutes at one request per second
-per host; killing a worker mid-crawl loses no progress; re-crawling an
-unchanged site produces identical `content_hash` values throughout.
+*Done when:* a 500-page website crawls within 20 minutes at one request per second
+per host; killing a worker mid-crawl loses no progress; and re-crawling an
+unchanged website produces identical `content_hash` values throughout.
 
-## M4 — Analysis and scoring
+## M6 — SEO analysis
 
 The issue catalogue as deterministic rules. Fingerprints, `issues` and
-`issue_observations`. Per-site expected-CTR curve. `scoring.py` under
-`SCORING_VERSION = "1.0.0"`. Crawl-to-crawl diffing.
+`issue_observations`. Per-website expected-CTR curve. Scoring driven by the
+`score_components` catalogue under `SCORING_VERSION = "1.0.0"`. Crawl-to-crawl
+diffing.
 
-*Done when:* two consecutive crawls of a site where one title was removed
-produce exactly one new issue, with the correct fingerprint, and restoring the
+*Done when:* two consecutive crawls of a website where one title was removed
+produce exactly one new issue with the correct fingerprint, and restoring the
 title flips it to `resolved` — not a new row.
 
-## M5 — AI layer
+## M7 — Unified dashboard
 
-Issue explanations with the evidence cache. Weekly plan generation with the
-`last_week` join. Keyword expansion ranked on the site's own GSC impressions.
-Output validation, budget admission, `llm_calls` metering.
+Home from a single `/overview` call, SEO with its four tabs, issue detail, the
+`mark-applied` → verification loop, settings. Every empty and partial state
+written.
 
-*Done when:* the numbers validator rejects a deliberately-poisoned generation;
-a 500-page crawl costs under $0.20 in explanations after cache warm-up; and a
-regenerated plan on unchanged data produces the same four priorities in the
-same order.
-
-## M6 — The screens
-
-Home (single `/overview` call), Google Hub, SEO with its four tabs, issue
-detail with `[Mark as fixed]` and verification, settings. Every empty and
-partial state written.
+The unification is the product promise made visible: crawl findings, Search
+Console performance and GA4 outcomes in one view, explained.
 
 *Done when:* a new user completes the wizard and lands on a Home screen with a
 populated 28-day chart and at least one actionable recommendation, without
 seeing a single "no data yet" panel.
 
-## M7 — The loop closes
-
-`mark-applied` → `fix_actions` → verification crawl → `verified` / `regressed`,
-surfaced in Recent Changes and in the next weekly plan.
-
-*Done when:* fixing a missing title and clicking "Mark as fixed" shows
-"verified" within five minutes, and the following week's plan opens by
-referencing it.
-
 ## M8 — Weekly report
 
-HTML email with score, deltas, the four priorities, what changed, what was
-verified. Scheduled per site in the site's timezone. Unsubscribe, delivery
-logging, a plain-text alternative.
+Issue explanations with the evidence cache, weekly plan generation with the
+`last_week` join, output validation, budget admission, metering. HTML email
+with score, deltas, priorities, what changed and what was verified.
 
-*Done when:* a report renders correctly in Gmail, Outlook and Apple Mail, and
-the figures in it match the dashboard for the same window exactly.
+*Done when:* the numbers validator rejects a deliberately-poisoned generation;
+a 500-page crawl costs under $0.20 in explanations after cache warm-up; a
+regenerated plan on unchanged data produces the same priorities in the same
+order; and the figures in the email match the dashboard exactly for the same
+window.
 
-## M9 — Launch readiness
+## M9 — AI Strategist
+
+Conversational analysis over typed, read-only tools. It lands last on purpose:
+by now there are months of Search Console history, crawl diffs, verified fixes
+and weekly plans to reason over. Built at M2 it would have had nothing to say.
+
+*Done when:* "why did my traffic fall?" returns an answer that names the
+specific queries and pages responsible, cites its window, and says so plainly
+when the data does not support a conclusion.
+
+## Launch readiness (parallel with M8–M9)
 
 Plan limits enforced at admission. Stripe checkout. Partition scheduler
 verified three months ahead. Backups with a **tested restore**. Error tracking,
-crawl-failure and sync-failure alerting. `/bot` page live. Terms, privacy and a
-data-deletion path that genuinely deletes.
-
-*Done when:* a restore from backup into a scratch environment is performed
-successfully and timed.
+crawl-failure and sync-failure alerting. `/bot` page live. The data-deletion
+path from M0 implemented and verified to actually delete.
 
 ---
 
+## V1 definition of done (spec §41)
+
+Beta-ready when a new user can do all fourteen, unaided:
+
+- [ ] create an account
+- [ ] add a website
+- [ ] connect Google
+- [ ] authorise Search Console
+- [ ] authorise Analytics
+- [ ] select the correct properties
+- [ ] perform an initial synchronisation
+- [ ] crawl their website
+- [ ] see search performance
+- [ ] see Analytics metrics
+- [ ] see technical SEO issues
+- [ ] receive AI recommendations
+- [ ] return later and see updated data
+- [ ] disconnect Google
+- [ ] delete their account
+
+The last two are the ones teams routinely defer past beta. Both are compliance
+surface, both were promised in the M0 policy documents, and neither is
+retrofittable without an awkward conversation.
+
+## Mapping to the spec's sprints (§43)
+
+| Spec sprint | Milestone |
+| --- | --- |
+| — | **M0** Google Cloud, consent copy, policies, verification submitted |
+| 1 Foundation | M1 |
+| 2 Google Hub | M2 |
+| 3 Search Console | M3 |
+| 4 Analytics | M4 |
+| 5 Crawler | M5 |
+| 6 SEO engine | M6 |
+| 7 AI | M7 dashboard · M8 report · M9 assistant |
+| 8 Beta hardening | Launch readiness, parallel with M8–M9 |
+
 ## Sequencing notes
 
-**The Strategist is not in the MVP.** It is the most impressive screen and the
-least essential: it answers questions about data the other milestones produce.
-Build it first and there is nothing to ask about. It slots in immediately after
-M8, when the data layer is proven, and it will take about a week.
+**AI visibility ships as proxies only.** The five computable rules in M6 are
+honest and free. Live measurement is phase 3 with its own cost model.
 
-**AI visibility ships as proxies only.** The five computable rules in M4 are
-honest and free. Live measurement is a v3 project with its own cost model.
-
-**Competitors and backlinks are not in the MVP at all** and the screen says so.
-They require a licensed data source; get quotes during M2 so the v2 pricing is
-grounded in real COGS.
+**Competitors and backlinks are not in the MVP** and the screen says so. The
+data model exists (`0007`); only acquisition is missing, and the vendor
+evaluation runs in parallel without blocking anything.
 
 **What could still go wrong, in rough order of likelihood:** OAuth verification
-slipping past M6 (mitigated by starting at M0 and staying inside the test-user
+slipping past M7 (mitigated by starting at M0 and staying inside the test-user
 cap); GSC quota during multi-tenant backfill (mitigated by the low-priority
 pool and `quota_hits` instrumentation); render-worker memory (mitigated by pool
-isolation and hard limits); and AI cost per crawl (mitigated by the evidence
-cache, and measurable from day one through `llm_calls`).
+isolation and hard limits); AI cost per crawl (mitigated by the evidence cache,
+measurable from day one through `llm_calls`).

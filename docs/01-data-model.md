@@ -6,8 +6,8 @@ schema; most of it is expensive to reverse.
 
 | Migration | Contents |
 | --- | --- |
-| `0001_tenancy.sql` | orgs, profiles, org_members, sites |
-| `0002_google_hub.sql` | token vault, google_accounts, google_resources, links, sync runs |
+| `0001_tenancy.sql` | organizations, users, organization_members, websites |
+| `0002_connections.sql` | token vault, connections, connection_properties, links, sync runs |
 | `0003_google_data.sql` | GSC and GA4 fact tables, correct-aggregation views |
 | `0004_crawl.sql` | crawls, frontier, pages, page_snapshots, links, PSI samples |
 | `0005_analysis.sql` | issues, observations, keywords, scores, plans, fixes, metering |
@@ -26,7 +26,7 @@ and nothing else — no trend, no "what changed", no proof a fix held. The trend
 line is what the customer pays for, so nothing that a customer sees over time is
 ever mutated.
 
-### 2. `org_id` is on every tenant table
+### 2. `organization_id` is on every tenant table
 
 Denormalised deliberately. It makes each RLS policy a single indexed predicate
 instead of a three-table join, and it makes a missing tenant filter a visible
@@ -48,7 +48,7 @@ over the ability to read a customer's Google account.
 `gsc_daily_totals` is fetched unsliced. `gsc_query_daily` is fetched with a
 query dimension, which causes Google to withhold low-volume queries entirely —
 commonly 30–50% of clicks. They are different tables on purpose, and
-`gsc_anonymised_share` exposes the gap so the UI can explain it. Deriving site
+`gsc_anonymised_share` exposes the gap so the UI can explain it. Deriving website
 totals by summing query rows produces numbers that contradict the user's own
 Google account, which is the fastest way to lose a sophisticated customer.
 
@@ -81,12 +81,12 @@ loop stops being verifiable.
 ## The Google Hub's shape
 
 One connected **account** grants a set of **scopes**, which expose
-**resources** across services, which are **linked** to sites:
+**resources** across services, which are **linked** to websites:
 
 ```
-google_accounts   1 ── n   google_resources   1 ── n   site_google_links
+connections   1 ── n   connection_properties   1 ── n   website_connections
   (one per            (GSC property,             (which resource
-   Google account)     GA4 property,              feeds which site)
+   Google account)     GA4 property,              feeds which website)
                        GBP location,
                        Ads customer)
 ```
@@ -96,10 +96,10 @@ Analytics and Business Profile in one pass, and what lets the Hub be lifted out
 as a standalone product: nothing in these four tables knows about crawling,
 issues or scoring.
 
-`google_resources.matched_hosts` is the auto-matching key. A GSC domain
+`connection_properties.matched_hosts` is the auto-matching key. A GSC domain
 property `sc-domain:example.com` expands to `{example.com}`; a URL-prefix
 property `https://www.example.com/` expands to `{www.example.com}`. The wizard
-proposes a link when a resource's hosts intersect the site's domain, and always
+proposes a link when a resource's hosts intersect the website's domain, and always
 lets the user override — `link_method` records which happened, so bad
 auto-matches are findable later.
 

@@ -5,7 +5,7 @@ Four jobs, each with a different cost profile and a different failure mode:
 | Job | Model tier | Cadence | Grounding |
 | --- | --- | --- | --- |
 | Issue explanation | cheap/fast | per new issue, cached | rule evidence only |
-| Weekly action plan | frontier | weekly per site | ranked findings + GSC deltas |
+| Weekly action plan | frontier | weekly per website | ranked findings + GSC deltas |
 | Keyword expansion | cheap/fast | on demand | business description + GSC queries |
 | AI Strategist (chat) | frontier | interactive | tool calls over the user's own data |
 
@@ -17,7 +17,7 @@ predictions, traffic estimates — all forbidden, and all checked.
 
 **2. The model never decides priority.** Ranking is `impact_score`, computed by
 code. The model orders the prose to match the ranking it is handed. If the
-model picked, the same site would produce a different top four on Tuesday than
+model picked, the same website would produce a different top four on Tuesday than
 on Monday, and neither could be explained.
 
 **3. Output is schema-validated.** Every call returns structured JSON against a
@@ -48,7 +48,7 @@ You will receive one detected issue as JSON, including the evidence that
 produced it. Write:
   - "what": one sentence naming the problem in plain language
   - "why": one or two sentences on why it costs them visibility
-  - "how": concrete numbered steps to fix it on their site
+  - "how": concrete numbered steps to fix it on their website
   - "effort": one of low | medium | high
 
 Rules:
@@ -62,8 +62,8 @@ Return JSON: {"what": str, "why": str, "how": [str], "effort": str}
 ```
 
 Cache key: `sha256(prompt_version + type_key + canonicalised_evidence)`. Two
-sites with the same missing-title problem share one generation; a site whose
-evidence is unchanged since last week regenerates nothing. On a 500-page site
+websites with the same missing-title problem share one generation; a website whose
+evidence is unchanged since last week regenerates nothing. On a 500-page website
 this is the difference between ~200 calls and ~5 per crawl.
 
 ### `weekly_plan.v1`
@@ -72,7 +72,7 @@ this is the difference between ~200 calls and ~5 per crawl.
 You are an SEO consultant writing this week's action plan for one website.
 
 You receive:
-  - site: domain, business description
+  - website: domain, business description
   - period: this week's dates
   - findings: ALREADY RANKED by measured impact, each with evidence
   - performance: 28-day clicks, impressions, CTR, position, with deltas
@@ -104,7 +104,7 @@ statuses and `issue_observations` since that date.
 ### `keyword_expansion.v1`
 
 ```
-Given a business description and the queries this site already receives
+Given a business description and the queries this website already receives
 impressions for, propose up to 40 additional search phrases real people would
 type.
 
@@ -113,13 +113,13 @@ Rules:
     estimates: you do not have that data and a fabricated figure is worse than
     no figure.
   - Group by intent: informational | commercial | navigational | local.
-  - Prefer phrases consistent with the site's existing query profile.
+  - Prefer phrases consistent with the website's existing query profile.
   - Include local variants where the business description names a place.
 
 Return JSON: {"groups": [{"intent": str, "phrases": [str]}]}
 ```
 
-Candidates are then ranked by *the site's own* GSC impressions where the
+Candidates are then ranked by *the website's own* GSC impressions where the
 phrase already appears — a free, honest signal that requires no third-party
 data. Unranked candidates are shown as unvalidated suggestions, never with a
 made-up number beside them.
@@ -154,7 +154,7 @@ every call is metered to `llm_calls` against the org's monthly budget.
 Answer style: lead with the finding, cite the numbers used, name the pages or
 queries, end with one concrete next step. When the data does not support a
 conclusion, say that — "your traffic fell but the drop is entirely in one query
-that is seasonal; there is no site problem in this data" is a better answer
+that is seasonal; there is no website problem in this data" is a better answer
 than a confident wrong one.
 
 ## Model routing and cost control
@@ -168,7 +168,7 @@ than a confident wrong one.
 
 Controls, all enforced before the call, not after the bill:
 
-- `orgs.monthly_ai_budget_usd`, checked at admission. Over budget, bulk
+- `organizations.monthly_ai_budget_usd`, checked at admission. Over budget, bulk
   explanations fall back to templates and the user is told their plan's AI
   allowance is used up; the weekly plan still runs, because it is the product.
 - Prompt caching on the long, stable system prompts.

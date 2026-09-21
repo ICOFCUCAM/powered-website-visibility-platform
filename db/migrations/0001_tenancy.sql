@@ -1,13 +1,13 @@
 -- 0001_tenancy.sql
--- Organisations, membership, sites. Every tenant-scoped table in later
--- migrations carries org_id directly so row-level security is a single
+-- Organisations, membership, websites. Every tenant-scoped table in later
+-- migrations carries organization_id directly so row-level security is a single
 -- predicate and never a join chain.
 
 create extension if not exists pgcrypto;
 create extension if not exists pg_trgm;
 create extension if not exists citext;
 
-create table orgs (
+create table organizations (
     id          uuid primary key default gen_random_uuid(),
     name        text        not null,
     slug        citext      not null unique,
@@ -20,43 +20,47 @@ create table orgs (
     created_at  timestamptz not null default now()
 );
 
--- Mirrors the identity provider's user id (Supabase auth.users.id, or your own
--- users table). Application data never lives in the auth schema.
-create table profiles (
+-- Mirrors the identity provider's user id (Supabase auth.users.id).
+--
+-- The V1 spec (s26) lists `password_hash` on this table. It is deliberately
+-- ABSENT here: credentials live in the auth provider's own schema, which the
+-- application never queries and never joins against. An application table that
+-- cannot leak a password hash is strictly safer than one that can, and email
+-- /password sign-in works identically either way.
+create table users (
     id          uuid primary key,
     email       citext      not null unique,
     full_name   text,
     created_at  timestamptz not null default now()
 );
 
-create table org_members (
-    org_id      uuid not null references orgs(id)     on delete cascade,
-    user_id     uuid not null references profiles(id) on delete cascade,
+create table organization_members (
+    organization_id      uuid not null references organizations(id)     on delete cascade,
+    user_id     uuid not null references users(id) on delete cascade,
     role        text not null default 'member'
                      check (role in ('owner','admin','member','viewer')),
     created_at  timestamptz not null default now(),
-    primary key (org_id, user_id)
+    primary key (organization_id, user_id)
 );
-create index on org_members (user_id);
+create index on organization_members (user_id);
 
-create table sites (
+create table websites (
     id          uuid primary key default gen_random_uuid(),
-    org_id      uuid   not null references orgs(id) on delete cascade,
+    organization_id      uuid   not null references organizations(id) on delete cascade,
     -- Registrable domain, lowercase, no scheme: example.com
     domain      citext not null,
     -- Preferred origin used as the crawl seed: https://www.example.com
-    origin      text   not null,
-    display_name text,
+    canonical_url text not null,
+    name         text,
     timezone    text   not null default 'UTC',
-    -- Per-site overrides layered on top of the plan defaults.
+    -- Per-website overrides layered on top of the plan defaults.
     crawl_config jsonb not null default '{}'::jsonb,
     crawl_schedule text not null default 'weekly'
                         check (crawl_schedule in ('off','weekly','daily')),
-    onboarding_state text not null default 'created'
-                        check (onboarding_state in
-                               ('created','google_linked','crawling','ready')),
+    status      text   not null default 'PENDING'
+                       check (status in ('PENDING','CONNECTING','CRAWLING','READY','ERROR')),
     created_at  timestamptz not null default now(),
     archived_at timestamptz,
-    unique (org_id, domain)
+    unique (organization_id, domain)
 );
-create index on sites (org_id) where archived_at is null;
+create index on websites (organization_id) where archived_at is null;

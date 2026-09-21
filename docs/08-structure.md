@@ -25,15 +25,23 @@ a business rule.
 ├── api/                        FastAPI
 │   ├── main.py
 │   ├── deps.py                 auth, org scope, db session, plan limits
-│   ├── routers/                sites, hub, performance, crawls, issues,
+│   ├── routers/                websites, hub, performance, crawls, issues,
 │   │                           plans, keywords, reports, strategist, internal
-│   ├── hub/                    ── THE GOOGLE HUB MODULE ──
-│   │   ├── oauth.py            PKCE, state, token exchange
-│   │   ├── vault.py            envelope encryption, KMS
-│   │   ├── discovery.py        sites.list / accountSummaries / locations
-│   │   ├── matching.py         resource → site host matching
-│   │   ├── clients/            search_console.py, analytics.py, business.py
-│   │   └── sync/               backfill.py, incremental.py, quota.py
+│   ├── adapters/               Supabase-specific code lives ONLY here
+│   │   ├── auth_supabase.py    JWT verification → user id
+│   │   ├── storage_supabase.py object storage
+│   │   └── db.py               connection pool, session, GUC binding
+│   ├── domain/                 pure logic; no vendor SDK, no framework
+│   ├── hub/                    ── THE GOOGLE HUB, A BOUNDED MODULE ──
+│   │   ├── routes/             its own FastAPI router
+│   │   ├── services/           oauth.py, vault.py, discovery.py, matching.py,
+│   │   │                       linking.py, sync/
+│   │   ├── providers/
+│   │   │   └── google/         search_console.py, analytics.py,
+│   │   │                       business_profile.py, ads.py
+│   │   ├── models/             connections, resources, links, sync runs
+│   │   ├── schemas/            the public contract, versioned
+│   │   └── webhooks/           outbound events to the core
 │   ├── crawler/
 │   │   ├── seeds.py            robots.txt, sitemaps
 │   │   ├── frontier.py         SKIP LOCKED lease/extend/complete
@@ -44,7 +52,7 @@ a business rule.
 │   ├── analysis/
 │   │   ├── rules/              one module per rule; the issue catalogue
 │   │   ├── fingerprint.py
-│   │   ├── ctr_baseline.py     per-site expected-CTR curve
+│   │   ├── ctr_baseline.py     per-website expected-CTR curve
 │   │   ├── scoring.py          versioned; SCORING_VERSION constant
 │   │   └── diff.py             crawl-to-crawl change detection
 │   ├── ai/
@@ -67,9 +75,66 @@ a business rule.
 └── infra/                      IaC, Dockerfiles, CI
 ```
 
+## The Hub boundary, enforced
+
+The Hub **may** know about: OAuth, provider accounts, Search Console
+properties, GA4 properties, token lifecycle, scopes, connection status, and its
+own webhooks and events.
+
+The Hub **must not** import: crawler code, SEO scoring, recommendations,
+dashboard logic, or competitor intelligence. The dependency runs one way.
+
+```
+        ┌──────────────────────┐
+        │      Google Hub      │
+        │       api/hub/       │
+        └──────────┬───────────┘
+                   │  HTTP + webhook events
+                   ▼
+        ┌──────────────────────┐
+        │   Visibility Core    │
+        │  crawl / SEO / data  │
+        └──────────────────────┘
+```
+
+The core reads Google data from the normalised tables in `0002`/`0003` and
+reacts to `hub.sync.completed`. It never constructs a Google client, and it
+never reads `secrets`.
+
+This is checked in CI rather than trusted to reviewers, because an import is
+one autocomplete away:
+
+```toml
+# .importlinter — run in CI, fails the build on violation
+[importlinter]
+root_packages = ["api"]
+
+[[importlinter:contract]]
+name = "Hub does not depend on the core"
+type = "forbidden"
+source_modules = ["api.hub"]
+forbidden_modules = [
+    "api.crawler", "api.analysis", "api.ai", "api.reports", "api.routers",
+]
+
+[[importlinter:contract]]
+name = "Domain layer is vendor-neutral"
+type = "forbidden"
+source_modules = ["api.domain"]
+forbidden_modules = ["supabase", "gotrue", "postgrest", "storage3"]
+```
+
+The second contract is what keeps decision 1 real. Supabase is a hosting
+choice; if it appears in `api/domain/`, migrating to managed Postgres stops
+being a configuration change and becomes a rewrite.
+
+The extraction path this buys: lift `api/hub/` into its own service, point the
+core at its URL instead of its Python package, and the product keeps working.
+No domain logic moves.
+
 ## Worker pools, separated by job shape
 
-A single queue is how one agency's 40-site backfill makes every other
+A single queue is how one agency's 40-website backfill makes every other
 customer's dashboard look broken.
 
 | Pool | Concurrency | Shape |
@@ -80,6 +145,19 @@ customer's dashboard look broken.
 | `analysis` | 4 | CPU-bound, short |
 | `ai` | 2 | Network-bound, budget-checked |
 | `reports` | 2 | Weekly burst |
+
+Nightly job schedule (V1 spec §31), staggered by a hash of `website_id` across
+each hour so every tenant does not fire at exactly 01:00 and burn Google quota
+on retries:
+
+```
+01:00  sync_search_console      04:00  calculate_scores
+02:00  sync_analytics           04:30  generate_recommendations
+03:00  crawl_website            Mon 06:00  generate_weekly_report
+```
+
+New accounts run the same jobs immediately through the queue rather than
+waiting for the next window.
 
 Backfills run at low priority inside `sync` so a new signup never starves the
 nightly incremental that existing customers depend on.
@@ -93,7 +171,9 @@ nightly incremental that existing customers depend on.
 | Object storage | Supabase Storage | S3/R2 when crawl volume justifies |
 | Web | Vercel | Same |
 | API + workers | Fly.io or Railway containers | Kubernetes at scale |
-| Queue | Postgres (`crawl_frontier` + a jobs table) | Redis/Celery when measured |
+| Cache, rate limits, OAuth state | Redis (managed) | Same |
+| Queue / workers | Celery on Redis | Same |
+| Crawl frontier | Postgres `crawl_frontier`, leased with SKIP LOCKED | Same — see below |
 | Email | Resend | Same |
 | Secrets | Cloud KMS for the master key | Same |
 
@@ -101,9 +181,16 @@ Supabase for the MVP because it collapses Postgres, auth, storage and RLS into
 one managed piece, and the schema is plain Postgres DDL so nothing here is a
 one-way door. The `secrets` schema is reachable only by the service role.
 
-Redis is deliberately absent from the MVP. The frontier is a Postgres table
-with `SKIP LOCKED`, which gives resumability for free and removes an entire
-component from the critical path. Add Redis when a measurement demands it.
+Redis carries caching, rate limiting, temporary OAuth state and the Celery
+broker, as the V1 spec requires.
+
+The **crawl frontier** is the one exception: it stays a Postgres table leased
+with `SELECT … FOR UPDATE SKIP LOCKED`. A crawl runs for tens of minutes and
+workers get evicted mid-run; with the frontier in Redis a lost worker loses its
+in-flight URLs and a Redis restart loses the crawl. In Postgres, an expired
+lease returns the rows to `pending` and the crawl resumes at page 400 of 500.
+Celery still dispatches the work — Postgres is only the durable record of what
+remains to fetch.
 
 ## CI
 

@@ -5,7 +5,7 @@
 -- Two facts drive the whole design:
 --
 --  1. Google ANONYMISES low-volume queries. Rows returned with a `query`
---     dimension therefore do NOT sum to the site's real totals — commonly
+--     dimension therefore do NOT sum to the website's real totals — commonly
 --     30-50% of clicks are missing. So the unsliced daily total is fetched and
 --     stored SEPARATELY, and the UI reports the gap as anonymised rather than
 --     letting the user discover the discrepancy.
@@ -20,20 +20,20 @@
 
 -- Unsliced daily totals. Reconciles with what the user sees in the GSC UI.
 create table gsc_daily_totals (
-    org_id      uuid not null,
-    site_id     uuid not null references sites(id) on delete cascade,
+    organization_id      uuid not null,
+    website_id     uuid not null references websites(id) on delete cascade,
     date        date not null,
     clicks      int     not null,
     impressions int     not null,
     position    numeric(6,2),
-    primary key (site_id, date)
+    primary key (website_id, date)
 );
 
 -- Query-level rows. Partitioned monthly: this is the largest table in the
 -- system for most tenants.
 create table gsc_query_daily (
-    org_id      uuid not null,
-    site_id     uuid not null,
+    organization_id      uuid not null,
+    website_id     uuid not null,
     date        date not null,
     query_hash  bytea not null,           -- sha256(lower(query))
     query       text  not null,
@@ -42,16 +42,16 @@ create table gsc_query_daily (
     clicks      int     not null,
     impressions int     not null,
     position    numeric(6,2) not null,
-    primary key (site_id, date, query_hash, country, device)
+    primary key (website_id, date, query_hash, country, device)
 ) partition by range (date);
 
-create index on gsc_query_daily (site_id, query_hash, date);
-create index on gsc_query_daily (site_id, date) include (clicks, impressions);
+create index on gsc_query_daily (website_id, query_hash, date);
+create index on gsc_query_daily (website_id, date) include (clicks, impressions);
 
 -- Page-level rows.
 create table gsc_page_daily (
-    org_id      uuid not null,
-    site_id     uuid not null,
+    organization_id      uuid not null,
+    website_id     uuid not null,
     date        date not null,
     url_hash    bytea not null,           -- sha256(normalised url)
     url         text  not null,
@@ -61,17 +61,17 @@ create table gsc_page_daily (
     clicks      int     not null,
     impressions int     not null,
     position    numeric(6,2) not null,
-    primary key (site_id, date, url_hash, country, device)
+    primary key (website_id, date, url_hash, country, device)
 ) partition by range (date);
 
-create index on gsc_page_daily (site_id, url_hash, date);
+create index on gsc_page_daily (website_id, url_hash, date);
 
 -- Query x page, needed to answer "which page ranks for this term" and to build
--- the CTR-opportunity finding. Expensive: fetched only for the site's top N
+-- the CTR-opportunity finding. Expensive: fetched only for the website's top N
 -- queries, and only for the trailing 90 days.
 create table gsc_query_page_daily (
-    org_id      uuid not null,
-    site_id     uuid not null,
+    organization_id      uuid not null,
+    website_id     uuid not null,
     date        date not null,
     query_hash  bytea not null,
     query       text  not null,
@@ -80,7 +80,7 @@ create table gsc_query_page_daily (
     clicks      int     not null,
     impressions int     not null,
     position    numeric(6,2) not null,
-    primary key (site_id, date, query_hash, url_hash)
+    primary key (website_id, date, query_hash, url_hash)
 ) partition by range (date);
 
 -- ---------------------------------------------------------------------------
@@ -88,8 +88,8 @@ create table gsc_query_page_daily (
 -- ---------------------------------------------------------------------------
 
 create table ga4_daily (
-    org_id          uuid not null,
-    site_id         uuid not null references sites(id) on delete cascade,
+    organization_id          uuid not null,
+    website_id         uuid not null references websites(id) on delete cascade,
     date            date not null,
     channel_group   text not null default 'ALL',
     sessions        int  not null default 0,
@@ -98,12 +98,12 @@ create table ga4_daily (
     engagement_rate numeric(6,4),
     avg_engagement_seconds numeric(8,2),
     key_events      int  not null default 0,
-    primary key (site_id, date, channel_group)
+    primary key (website_id, date, channel_group)
 );
 
 create table ga4_page_daily (
-    org_id          uuid not null,
-    site_id         uuid not null,
+    organization_id          uuid not null,
+    website_id         uuid not null,
     date            date not null,
     url_hash        bytea not null,
     page_path       text  not null,
@@ -113,20 +113,20 @@ create table ga4_page_daily (
     engaged_sessions int not null default 0,
     avg_engagement_seconds numeric(8,2),
     key_events      int  not null default 0,
-    primary key (site_id, date, url_hash)
+    primary key (website_id, date, url_hash)
 ) partition by range (date);
 
 -- Outcome counts per mapped goal event.
 create table ga4_goal_daily (
-    org_id      uuid not null,
-    site_id     uuid not null,
+    organization_id      uuid not null,
+    website_id     uuid not null,
     date        date not null,
     event_name  text not null,
     -- Sentinel rather than NULL: a primary key cannot contain an expression,
-    -- and site-wide rows still need to be distinguishable from per-page rows.
+    -- and website-wide rows still need to be distinguishable from per-page rows.
     url_hash    bytea not null default '\x00'::bytea,
     event_count int not null default 0,
-    primary key (site_id, date, event_name, url_hash)
+    primary key (website_id, date, event_name, url_hash)
 ) partition by range (date);
 
 -- ---------------------------------------------------------------------------
@@ -135,7 +135,7 @@ create table ga4_goal_daily (
 
 create view gsc_query_rollup as
 select
-    site_id,
+    website_id,
     query_hash,
     min(query)                                      as query,
     min(date)                                       as first_date,
@@ -147,11 +147,11 @@ select
     case when sum(impressions) > 0
          then sum(position * impressions) / sum(impressions) end     as position
 from gsc_query_daily
-group by site_id, query_hash;
+group by website_id, query_hash;
 
 create view gsc_page_rollup as
 select
-    site_id,
+    website_id,
     url_hash,
     min(url)                                        as url,
     sum(clicks)                                     as clicks,
@@ -161,13 +161,13 @@ select
     case when sum(impressions) > 0
          then sum(position * impressions) / sum(impressions) end     as position
 from gsc_page_daily
-group by site_id, url_hash;
+group by website_id, url_hash;
 
 -- Share of clicks Google withheld as anonymised, per day. Surfaced in the UI so
 -- the numbers are explained rather than merely inconsistent.
 create view gsc_anonymised_share as
 select
-    t.site_id,
+    t.website_id,
     t.date,
     t.clicks                             as total_clicks,
     coalesce(q.clicks, 0)                as attributed_clicks,
@@ -177,8 +177,8 @@ select
                                          as anonymised_share
 from gsc_daily_totals t
 left join (
-    select site_id, date, sum(clicks) as clicks
+    select website_id, date, sum(clicks) as clicks
     from gsc_query_daily
     where country = 'ZZZ' and device = 'ALL'
-    group by site_id, date
-) q on q.site_id = t.site_id and q.date = t.date;
+    group by website_id, date
+) q on q.website_id = t.website_id and q.date = t.date;

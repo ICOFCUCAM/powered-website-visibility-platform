@@ -36,7 +36,7 @@ schedule/onboarding
 
 1. `GET /robots.txt` — parse rules and `Sitemap:` directives; store the raw file.
 2. Sitemaps, recursively through index files, capped at 50 files / 50k URLs.
-3. The site origin, plus any origin from a homepage redirect chain.
+3. The website origin, plus any origin from a homepage redirect chain.
 
 If robots.txt is unreachable, treat it as "allow all" but record the fact. If
 it disallows everything, stop and raise a `robots_blocks_crawl` issue — that is
@@ -60,7 +60,7 @@ Non-negotiable defaults:
   run after repeated refusals.
 - **Verified ownership required** before crawling beyond the plan's free page
   cap, via the GSC link or a DNS/file token. This stops the platform being used
-  as a stress-testing service against sites the user does not own.
+  as a stress-testing service against websites the user does not own.
 
 ## Render escalation
 
@@ -71,7 +71,7 @@ Escalate when any of these hold:
 - rendered-vs-raw heuristic trips: `<body>` text under ~200 chars while script
   bytes exceed ~50 KB;
 - the HTML has an SPA root (`#root`, `#app`, `<app-root>`) and no `<h1>`;
-- the URL matches a site-level "always render" override;
+- the URL matches a website-level "always render" override;
 - a sample of 5 URLs per crawl is always rendered to detect a JS-dependent
   template, and if ≥3 differ materially, the whole crawl escalates.
 
@@ -90,10 +90,10 @@ and internal/external link counts.
 Two hashes are stored: `content_hash` over the normalised HTML and `text_hash`
 over extracted text. Equal hashes between crawls mean nothing changed — which
 skips re-analysis, allows cached LLM explanations, and powers duplicate-content
-detection within the site.
+detection within the website.
 
 Raw HTML is gzipped to object storage at
-`{site_id}/{crawl_id}/{url_hash}.html.gz`. Postgres stores the key.
+`{website_id}/{crawl_id}/{url_hash}.html.gz`. Postgres stores the key.
 
 ## Link checking
 
@@ -118,7 +118,7 @@ that looks complete produces analysis that is quietly wrong.
 
 ## Scheduling
 
-Weekly by default, staggered by a hash of `site_id` across the week so Monday
+Weekly by default, staggered by a hash of `website_id` across the week so Monday
 09:00 is not a thundering herd. Daily on higher plans. Verification crawls are
 single-URL, run within minutes of a fix being marked applied, and write to
 `crawls.verifies_issue_id`.
