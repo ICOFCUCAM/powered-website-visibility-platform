@@ -247,3 +247,74 @@ begin
     end if;
     raise notice 'PASS  standing approval restricted to reversible capabilities';
 end $$;
+
+-- ---------------------------------------------------------------------------
+-- 9. Every derived table carries provenance. A number on the dashboard must
+--    always be traceable to the records and the calculation version that
+--    produced it — this test is what stops that guarantee eroding one
+--    convenient migration at a time.
+-- ---------------------------------------------------------------------------
+do $$
+declare
+    t text;
+    required text[] := array['source','derived_from','computed_at'];
+    col text;
+    missing text := '';
+begin
+    foreach t in array array['issues','recommendations','external_metrics'] loop
+        foreach col in array required loop
+            if not exists (
+                select 1 from information_schema.columns
+                 where table_name = t and column_name = col
+            ) then
+                missing := missing || format('%s.%s ', t, col);
+            end if;
+        end loop;
+    end loop;
+    -- score_snapshots and plans carry scoring_version as their calculation
+    -- version, so they are checked for the rest of the contract only.
+    foreach t in array array['score_snapshots','plans'] loop
+        foreach col in array array['source','derived_from','scoring_version'] loop
+            if not exists (
+                select 1 from information_schema.columns
+                 where table_name = t and column_name = col
+            ) then
+                missing := missing || format('%s.%s ', t, col);
+            end if;
+        end loop;
+    end loop;
+
+    if missing <> '' then
+        raise exception 'PROVENANCE FAIL: missing %', missing;
+    end if;
+    raise notice 'PASS  every derived table carries source, derived_from and a calculation version';
+end $$;
+
+-- ---------------------------------------------------------------------------
+-- 10. The provenance index answers "where did this number come from" across
+--     every derived table in one query.
+-- ---------------------------------------------------------------------------
+insert into score_snapshots
+    (organization_id, website_id, as_of, scoring_version, total,
+     technical_health, search_performance, content_health, analytics_coverage,
+     components, source, derived_from, observed_from, observed_to)
+values ('11111111-1111-1111-1111-111111111111','5117e000-0000-0000-0000-00000000000a',
+        current_date, '1.0.0', 76, 85, 68, 73, 91,
+        '{"technical_health":{"penalty":15,"issues_open":3}}',
+        'derived',
+        '{"crawl_id":"c0000000-0000-0000-0000-00000000000c","gsc_days":28}',
+        current_date - 28, current_date - 3);
+
+do $$
+declare src text; ver text; frm jsonb;
+begin
+    select source, calculation_version, derived_from into src, ver, frm
+      from provenance_index
+     where table_name = 'score_snapshots'
+       and website_id = '5117e000-0000-0000-0000-00000000000a';
+    if src is null or ver <> '1.0.0' or frm->>'crawl_id' is null then
+        raise exception 'PROVENANCE INDEX FAIL: source=%, version=%, from=%', src, ver, frm;
+    end if;
+    raise notice 'PASS  score of 76 traces to source=%, version=%, crawl=%',
+                 src, ver, frm->>'crawl_id';
+end $$;

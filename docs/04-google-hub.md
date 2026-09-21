@@ -199,7 +199,20 @@ Hub's public contract is:
 - `GET /v1/hub/resources?service=` — everything discovered
 - `POST /v1/hub/links` — attach a resource to a website
 - `GET /v1/hub/data/search-analytics` — normalised, already-correct rollups
-- webhook `hub.sync.completed` — fired when a backfill or daily sync lands
+- domain event `hub.sync.completed` — published in-process when a sync lands
+
+The Hub publishes four **internal domain events**. They are not Google
+webhooks: Google does not push Search Console or Analytics reporting data to
+this application, and every figure in the product arrives because a scheduled
+job went and asked for it.
+
+```
+hub.sync.completed · hub.sync.failed · hub.connection.revoked · hub.property.connected
+```
+
+And the boundary rule, stated so a linter can check it:
+
+> **Only the Hub may construct or call a Google API client.**
 
 Keeping that boundary costs almost nothing now and is what makes "Google Hub as
 a product in its own right" a packaging decision later rather than a rewrite.

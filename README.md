@@ -47,6 +47,8 @@ PASS  applied action without before_state rejected
 PASS  applied action with before_state accepted
 PASS  enabled score weights total 1.00 with 2 component(s) awaiting a data source
 PASS  standing approval restricted to reversible capabilities
+PASS  every derived table carries source, derived_from and a calculation version
+PASS  score of 76 traces to source=derived, version=1.0.0, crawl=c0000000-…
 ```
 
 Each test exercises a claim the design depends on rather than the ORM's ability
@@ -54,13 +56,23 @@ to insert a row. The position test is the clearest example: the same data reads
 as 3.17 when weighted by impressions and 11.50 when averaged naively, and the
 naive figure is the one that looks plausible in a dashboard.
 
-## Three rules the whole design hangs on
+## Five rules the whole design hangs on
 
-1. **Detection is deterministic; the LLM explains.** Rules find issues and
-   produce stable fingerprints. The model writes the prose and the fix. It never
-   decides what is broken and never invents a number.
-2. **Observations are append-only.** A ranking, a crawl result and a score are
-   never updated in place. The trend line is the product.
-3. **Nothing ships a metric it cannot defend.** No fabricated search volumes, no
-   modelled traffic presented as fact, no binary "yes" for a non-deterministic
-   measurement.
+1. **Google is never in the read path.** It is reached only by scheduled syncs
+   that write to Postgres. Dashboards read Postgres. An outage degrades to
+   stale data with an honest timestamp, never an error page.
+2. **Only the Hub may construct or call a Google API client.** Enforced by a CI
+   import contract, not by review. What crosses the boundary is normalised
+   facts and internal domain events — never a client or a credential.
+3. **Detection is deterministic; the model explains.** Rules find issues and
+   emit stable fingerprints. The model writes the prose and the fix. *AI may
+   explain and prioritise existing evidence; it may not create evidence.*
+4. **Observational facts are append-only; operational state is updated
+   normally.** Measurements, snapshots and scores are never overwritten —
+   that history is the product. `users`, `websites` and status fields change
+   like any other row. The three tiers are specified in
+   [01-data-model.md](docs/01-data-model.md).
+5. **Nothing ships a number it cannot defend.** Every derived value carries its
+   source, the records it came from, and the calculation version that produced
+   it. No fabricated search volumes, no modelled traffic presented as fact, no
+   metric with no source rendered as zero.

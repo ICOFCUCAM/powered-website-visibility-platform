@@ -41,7 +41,7 @@ a business rule.
 │   │   │                       business_profile.py, ads.py
 │   │   ├── models/             connections, resources, links, sync runs
 │   │   ├── schemas/            the public contract, versioned
-│   │   └── webhooks/           outbound events to the core
+│   │   └── events/             internal domain events published to the core
 │   ├── crawler/
 │   │   ├── seeds.py            robots.txt, sitemaps
 │   │   ├── frontier.py         SKIP LOCKED lease/extend/complete
@@ -77,9 +77,42 @@ a business rule.
 
 ## The Hub boundary, enforced
 
-The Hub **may** know about: OAuth, provider accounts, Search Console
-properties, GA4 properties, token lifecycle, scopes, connection status, and its
-own webhooks and events.
+The rule, stated so it is testable rather than aspirational:
+
+> **Only the Hub may construct or call a Google API client.**
+
+That is stronger than "the sync engine talks to Google", because it is a
+property a linter can check. The Hub owns OAuth, token lifecycle, property
+discovery, the Google API clients themselves, and scheduled sync orchestration.
+What crosses the boundary is **normalised Google facts and internal domain
+events** — never a client, a credential, or a live API call.
+
+```
+Google Hub
+  OAuth
+  token lifecycle
+  property discovery
+  Google API clients          <- nothing outside this module may import these
+  scheduled sync orchestration
+        |
+        v
+  normalised Google facts  +  domain events
+        |
+        v
+Visibility Core
+```
+
+The four domain events are internal to this application. They are **not**
+Google webhooks — Google does not push Search Console or Analytics reporting
+data to us, and nothing in the design should imply that it does. Every Google
+figure in this product arrives because a scheduled job went and asked for it.
+
+```
+hub.sync.completed       a sync landed; new facts are queryable
+hub.sync.failed          a sync did not land; the gap is recorded
+hub.connection.revoked   credentials are gone; stop scheduling work
+hub.property.connected   a property was attached to a website
+```
 
 The Hub **must not** import: crawler code, SEO scoring, recommendations,
 dashboard logic, or competitor intelligence. The dependency runs one way.
@@ -89,7 +122,7 @@ dashboard logic, or competitor intelligence. The dependency runs one way.
         │      Google Hub      │
         │       api/hub/       │
         └──────────┬───────────┘
-                   │  HTTP + webhook events
+                   │  normalised facts + domain events
                    ▼
         ┌──────────────────────┐
         │   Visibility Core    │
@@ -122,6 +155,18 @@ name = "Domain layer is vendor-neutral"
 type = "forbidden"
 source_modules = ["api.domain"]
 forbidden_modules = ["supabase", "gotrue", "postgrest", "storage3"]
+
+[[importlinter:contract]]
+name = "Only the Hub may construct a Google API client"
+type = "forbidden"
+source_modules = [
+    "api.crawler", "api.analysis", "api.ai", "api.reports",
+    "api.routers", "api.domain",
+]
+forbidden_modules = [
+    "googleapiclient", "google.oauth2", "google.auth",
+    "google.analytics", "google_auth_oauthlib",
+]
 ```
 
 The second contract is what keeps decision 1 real. Supabase is a hosting
