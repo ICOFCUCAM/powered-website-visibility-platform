@@ -1,0 +1,16 @@
+# The image carries api/ and db/ and nothing else. Everything below is either
+# the other runtime, a local artefact, or a secret that must never be baked in.
+web/
+docs/
+scripts/
+.git/
+.github/
+.venv/
+**/__pycache__/
+**/*.pyc
+.pytest_cache/
+.ruff_cache/
+api/tests/
+.env
+.env.*
+!.env.example

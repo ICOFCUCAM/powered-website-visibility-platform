@@ -58,6 +58,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 def create_app() -> FastAPI:
+    settings = get_settings()
     app = FastAPI(
         title="Visibility Hub API",
         version="0.1.0",
@@ -68,10 +69,17 @@ def create_app() -> FastAPI:
 
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["http://localhost:3000"],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_origins=list(settings.cors_origins),
+        # The session is a bearer token the front end holds and sends as a
+        # header; nothing here reads a cookie. Turning credentials off keeps
+        # a browser from attaching one to a cross-origin call, and means an
+        # origin list that is wrong fails visibly rather than half-working.
+        # Move to cookie sessions and this becomes True — and then the origin
+        # list is the only thing standing between a customer's session and
+        # any site that can get them to load a page.
+        allow_credentials=False,
+        allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type"],
     )
 
     @app.exception_handler(AppError)

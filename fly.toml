@@ -1,0 +1,62 @@
+# Example Fly.io deployment. Copy, set `app`, and check it in per environment —
+# this file names no secret, and none of the values below are sensitive.
+#
+#   fly secrets set DATABASE_URL=… SERVICE_DATABASE_URL=… JWT_SECRET=… …
+#   fly deploy
+#
+# One image (see Dockerfile), several processes. `scripts/worker.sh` is not
+# used here: it is a developer convenience that assumes ./.venv, while the
+# image has celery on PATH.
+
+app = "visibility-hub"
+primary_region = "lhr"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  ENVIRONMENT = "production"
+  # CORS_ORIGINS, WEB_BASE_URL and GOOGLE_REDIRECT_URI are not secrets either,
+  # but they differ per environment, so they are set with `fly secrets set`
+  # alongside the real ones rather than split across two places.
+
+[processes]
+  # The request path. Only this one is reachable from the internet.
+  api      = "uvicorn api.main:app --host 0.0.0.0 --port 8000"
+
+  # The clock. EXACTLY ONE — never `fly scale count beat=2`. Two would double
+  # every tick; the slot claim in `scheduled_runs` would still keep the work
+  # single, but there is no reason to make the database referee it.
+  beat     = "celery -A api.workers.app:app beat --loglevel INFO"
+
+  # The pools, separated by job shape. A single queue is how one agency's
+  # forty-website backfill makes every other customer's dashboard look broken:
+  # crawls are long and host-rate-limited, syncs are quota-bound, analysis is
+  # short. Concurrencies match docs/08-architecture.md.
+  crawl    = "celery -A api.workers.app:app worker -Q crawl -c 8 --loglevel INFO -n crawl@%h"
+  sync     = "celery -A api.workers.app:app worker -Q sync -c 4 --loglevel INFO -n sync@%h"
+  analysis = "celery -A api.workers.app:app worker -Q analysis -c 4 --loglevel INFO -n analysis@%h"
+  ai       = "celery -A api.workers.app:app worker -Q ai -c 2 --loglevel INFO -n ai@%h"
+  reports  = "celery -A api.workers.app:app worker -Q reports -c 2 --loglevel INFO -n reports@%h"
+  # `render` has no jobs routed to it yet — it is the seam for JS rendering.
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ["api"]
+
+  [[http_service.checks]]
+    method = "GET"
+    path = "/api/v1/health"
+    interval = "15s"
+    timeout = "5s"
+    grace_period = "10s"
+
+[[vm]]
+  # The workers hold HTML in memory while parsing; the API does not. Size the
+  # crawl pool up first if anything runs out.
+  size = "shared-cpu-1x"
+  memory = "1gb"

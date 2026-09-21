@@ -147,6 +147,7 @@ The technical specification in [`docs/`](docs/) remains the source of truth.
 | [13-scheduler.md](docs/13-scheduler.md) | The nightly schedule: claims, leases, pools, what an operator reads |
 | [14-deletion.md](docs/14-deletion.md) | Disconnect and account deletion: what the cascade misses, and how it is verified |
 | [15-alerting.md](docs/15-alerting.md) | Operator incidents and customer notices: the line between noise and silence |
+| [16-deployment.md](docs/16-deployment.md) | What runs where, the environment each process needs, and the order that matters |
 
 ## V1 → V2 → V3
 

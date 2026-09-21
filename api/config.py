@@ -54,6 +54,11 @@ class Settings:
     #: weekly email, which is the one place the API has to know its own
     #: front end's address.
     web_base_url: str
+    #: Which browser origins may call this API. In any real deployment the
+    #: front end and the API are two different origins by construction — the
+    #: app on Vercel, the API on a container host — so this is configuration,
+    #: never a constant.
+    cors_origins: tuple[str, ...]
 
     @property
     def is_production(self) -> bool:
@@ -70,6 +75,45 @@ class Settings:
         )
 
 
+def _cors_origins(environment: str) -> tuple[str, ...]:
+    """Who may call this API from a browser.
+
+    Production has no default, for the same reason no secret has one. The
+    front end and the API are two origins in any real deployment, so a
+    localhost fallback would not be a degraded mode — it would be a deployment
+    where every request is blocked, with the error appearing in the customer's
+    browser console rather than in our logs at startup.
+
+    `*` is refused rather than passed through. It is the setting somebody
+    reaches for when CORS is failing and the deadline is close, and it makes
+    every website on the internet able to call this API with a stolen token.
+    """
+    raw = os.environ.get("CORS_ORIGINS", "")
+    origins = tuple(
+        origin.strip().rstrip("/") for origin in raw.split(",") if origin.strip()
+    )
+
+    if environment != "production":
+        return origins or ("http://localhost:3000",)
+
+    if not origins:
+        raise ConfigError(
+            "CORS_ORIGINS is required in production: set it to the front end's "
+            "origin, e.g. https://app.example.com"
+        )
+    if "*" in origins:
+        raise ConfigError(
+            "CORS_ORIGINS may not be '*': every site on the internet could "
+            "then call this API with a token taken from a customer's browser"
+        )
+    insecure = [origin for origin in origins if not origin.startswith("https://")]
+    if insecure:
+        raise ConfigError(
+            f"CORS_ORIGINS must be https in production: {', '.join(insecure)}"
+        )
+    return origins
+
+
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     jwt_secret = _required("JWT_SECRET")
@@ -77,6 +121,8 @@ def get_settings() -> Settings:
     # s3.2). Fail at startup rather than warn once per token.
     if len(jwt_secret.encode()) < 32:
         raise ConfigError("JWT_SECRET must be at least 32 bytes")
+
+    environment = os.environ.get("ENVIRONMENT", "development")
 
     return Settings(
         database_url=_required("DATABASE_URL"),
@@ -88,8 +134,9 @@ def get_settings() -> Settings:
         jwt_secret=jwt_secret,
         jwt_algorithm=os.environ.get("JWT_ALGORITHM", "HS256"),
         jwt_audience=os.environ.get("JWT_AUDIENCE") or None,
-        environment=os.environ.get("ENVIRONMENT", "development"),
+        environment=environment,
         pool_min_size=int(os.environ.get("DB_POOL_MIN", "1")),
         pool_max_size=int(os.environ.get("DB_POOL_MAX", "10")),
         web_base_url=os.environ.get("WEB_BASE_URL", "http://localhost:3000"),
+        cors_origins=_cors_origins(environment),
     )
