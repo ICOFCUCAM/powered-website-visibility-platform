@@ -75,6 +75,55 @@ export interface Me {
   organizations: { organization_id: string; role: string }[];
 }
 
+export interface GoogleProperty {
+  id: string;
+  service: string;
+  property_uri: string;
+  property_name: string | null;
+  permission_level: string | null;
+  account: string;
+  match_quality: "none" | "subdomain" | "host" | "domain";
+  suggested: boolean;
+  proves_ownership: boolean;
+  match_rank: number;
+}
+
+export interface GoogleConnection {
+  id: string;
+  provider: string;
+  account: string;
+  granted_scopes: string[];
+  status: "active" | "needs_reauth" | "revoked" | "error";
+  last_error: string | null;
+  connected_at: string;
+  last_refreshed_at: string | null;
+}
+
+export interface SyncResult {
+  status: string;
+  rows_written: number;
+  api_calls: number;
+  quota_hits: number;
+  chunks_completed: number;
+  chunks_failed: number;
+}
+
+export interface Performance {
+  start: string;
+  end: string;
+  totals: { clicks: number; impressions: number; ctr: number | null; position: number | null };
+  compared_to: Performance["totals"] | null;
+  delta: { clicks: number | null; impressions: number | null; ctr: number | null; position: number | null } | null;
+  series: { date: string; clicks: number; impressions: number; ctr: number | null; position: number | null }[];
+  anonymised: {
+    total_clicks: number;
+    attributed_clicks: number;
+    anonymised_clicks: number;
+    anonymised_share: number | null;
+    note: string;
+  };
+}
+
 export const api = {
   me: (token: string) => request<Me>("/auth/me", token),
   listWebsites: (token: string) => request<Website[]>("/websites", token),
@@ -84,4 +133,53 @@ export const api = {
       body: JSON.stringify({ url, name: name ?? null }),
     }),
   health: () => request<{ status: string }>("/health", null),
+
+  connections: (token: string) =>
+    request<GoogleConnection[]>("/google/connections", token),
+
+  /**
+   * A browser cannot put an Authorization header on a link or a redirect, so
+   * the API hands back the URL and we navigate to it. Putting the session
+   * token in a query string instead would write a credential into browser
+   * history, server logs and the Referer header.
+   */
+  startGoogleConnect: (token: string, websiteId: string, services: string[]) => {
+    const query = new URLSearchParams({ website_id: websiteId });
+    services.forEach((s) => query.append("services", s));
+    return request<{ authorization_url: string }>(
+      `/google/connect?${query}`,
+      token,
+      { headers: { Accept: "application/json" } },
+    );
+  },
+
+  properties: (token: string, service: "search-console" | "analytics", websiteId: string) =>
+    request<GoogleProperty[]>(
+      `/google/${service}/properties?website_id=${websiteId}`,
+      token,
+    ),
+
+  connectProperty: (
+    token: string,
+    service: "search-console" | "analytics",
+    propertyId: string,
+    websiteId: string,
+    linkMethod: "auto" | "user_selected",
+  ) =>
+    request<{ ownership_recorded: boolean }>(
+      `/google/${service}/properties/${propertyId}/connect`,
+      token,
+      { method: "POST", body: JSON.stringify({ website_id: websiteId, link_method: linkMethod }) },
+    ),
+
+  syncSearchConsole: (token: string, websiteId: string) =>
+    request<SyncResult>(`/websites/${websiteId}/sync/search-console`, token, {
+      method: "POST",
+    }),
+
+  performance: (token: string, websiteId: string) =>
+    request<Performance>(`/websites/${websiteId}/search-performance`, token),
+
+  website: (token: string, websiteId: string) =>
+    request<Website>(`/websites/${websiteId}`, token),
 };

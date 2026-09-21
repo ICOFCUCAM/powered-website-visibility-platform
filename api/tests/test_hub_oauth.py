@@ -213,3 +213,36 @@ async def test_unticking_a_permission_is_honoured(client, two_tenants, google):
         "/api/v1/google/search-console/properties", headers=auth_headers(user)
     )
     assert listed.json() == []
+
+
+async def test_a_single_page_app_can_start_the_flow(client, two_tenants, google):
+    """A browser cannot put an Authorization header on a link or a redirect,
+    so asking for JSON returns the URL for the app to navigate to.
+
+    The alternative — a session token in the query string — writes a
+    credential into browser history, server logs and the Referer header.
+    """
+    response = await client.get(
+        "/api/v1/google/connect",
+        headers={**auth_headers(two_tenants["user_a"]), "Accept": "application/json"},
+    )
+    assert response.status_code == 200
+    url = response.json()["authorization_url"]
+    assert url.startswith("https://accounts.google.com/")
+
+    params = parse_qs(urlparse(url).query)
+    assert params["code_challenge_method"] == ["S256"]
+    # Same guarantee as the redirect path: the verifier stays server-side.
+    assert "code_verifier" not in params
+
+
+async def test_the_token_never_appears_in_the_authorization_url(
+    client, two_tenants, google
+):
+    response = await client.get(
+        "/api/v1/google/connect",
+        headers={**auth_headers(two_tenants["user_a"]), "Accept": "application/json"},
+    )
+    url = response.json()["authorization_url"]
+    assert "Bearer" not in url
+    assert "eyJ" not in url  # the leading characters of a JWT

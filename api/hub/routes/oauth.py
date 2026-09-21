@@ -7,8 +7,8 @@ from typing import Annotated
 from urllib.parse import urlencode
 from uuid import UUID
 
-from fastapi import APIRouter, Query
-from fastapi.responses import RedirectResponse
+from fastapi import APIRouter, Query, Request
+from fastapi.responses import JSONResponse, RedirectResponse
 
 from api.deps import MembershipsDep, PrincipalDep
 from api.domain.errors import Forbidden
@@ -38,8 +38,11 @@ router = APIRouter(prefix="/google", tags=["google"])
 DEFAULT_SERVICES = ["search_console"]
 
 
-@router.get("/connect")
+# response_model=None: the union return type is two Response classes,
+# which FastAPI would otherwise try to turn into a Pydantic schema.
+@router.get("/connect", response_model=None)
 async def connect(
+    request: Request,
     principal: PrincipalDep,
     memberships: MembershipsDep,
     settings: GoogleSettingsDep,
@@ -47,7 +50,18 @@ async def connect(
     conn: ServiceConnectionDep,
     website_id: Annotated[UUID | None, Query()] = None,
     services: Annotated[list[str] | None, Query()] = None,
-) -> RedirectResponse:
+) -> RedirectResponse | JSONResponse:
+    """Starts the flow.
+
+    Returns a 302 by default, per the V1 spec. But a browser cannot send an
+    Authorization header on a plain link or a redirect, so a single-page app
+    cannot start the flow that way. Asking for JSON returns the URL instead and
+    the app navigates to it itself.
+
+    The alternative — putting the session token in the query string so a link
+    works — writes a credential into browser history, server logs and the
+    Referer header. Not worth it for one extra fetch.
+    """
     writable = [m for m in memberships if m.role.can_write]
     if not writable:
         raise Forbidden("Your role doesn't allow connecting Google.")
@@ -78,17 +92,18 @@ async def connect(
         if c["status"] == "active"
     ]
 
-    return RedirectResponse(
-        authorization_url(
-            client_id=settings.client_id,
-            redirect_uri=settings.redirect_uri,
-            scopes=scopes_for(requested),
-            state_id=state_id,
-            challenge=pkce.challenge,
-            has_existing_refresh_token=bool(existing),
-        ),
-        status_code=302,
+    url = authorization_url(
+        client_id=settings.client_id,
+        redirect_uri=settings.redirect_uri,
+        scopes=scopes_for(requested),
+        state_id=state_id,
+        challenge=pkce.challenge,
+        has_existing_refresh_token=bool(existing),
     )
+
+    if "application/json" in request.headers.get("accept", ""):
+        return JSONResponse({"authorization_url": url})
+    return RedirectResponse(url, status_code=302)
 
 
 @router.get("/callback")

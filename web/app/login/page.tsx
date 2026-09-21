@@ -20,7 +20,7 @@ export default function LoginPage() {
       // fails here rather than on every subsequent screen.
       await api.me(token.trim());
       writeToken(token.trim());
-      router.push("/dashboard");
+      router.push("/onboarding");
     } catch (err) {
       setError(
         err instanceof ApiError

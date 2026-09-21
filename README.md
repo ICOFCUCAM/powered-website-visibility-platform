@@ -9,11 +9,21 @@ Discover → Diagnose → Recommend → Fix → Measure → Repeat
 
 ## Status
 
-**M2 — Google Hub.** The database, the API with its org-scoping dependency
-chain, the web shell, and the Google connection layer: OAuth with PKCE, the
-encrypted token vault, property discovery across Search Console and GA4,
-auto-matching, linking and ownership recording. The crawler, the rules engine
-and the dashboard (M5–M9) do not exist yet.
+**M3 + the onboarding wizard.** The database, the API, the Google connection
+layer (OAuth with PKCE, encrypted token vault, property discovery,
+auto-matching, linking, ownership), Search Console synchronisation, and the
+five-step wizard a customer actually walks through:
+
+```
+1. Your website        example.com
+2. Google account      you@example.com
+3. Search Console      sc-domain:example.com   ← best match, pre-selected
+4. Analytics           Example — GA4
+5. Business Profile    Coming soon
+6. Website scan        16 months of history
+```
+
+The crawler, the rules engine and the dashboard (M5–M9) do not exist yet.
 
 The live Google handshake is the one thing untested here, because it needs a
 verified Cloud project and a real user's consent. Everything up to it runs
@@ -35,7 +45,7 @@ cd web && npm run dev                          # UI on :3000
 | `api/repositories/` | Postgres implementations of the domain's repository protocols. |
 | `api/routers/` | `/api/v1` surface. |
 | `api/hub/` | The Google Hub: the only module that may reach Google. Its own routes, services, providers and domain events. |
-| `web/` | Next.js shell: sign-in, add a website, list them. |
+| `web/` | Next.js: the onboarding wizard, sign-in, website list. |
 | `db/` | Migrations, roles, schema tests. |
 
 The technical specification in [`docs/`](docs/) remains the source of truth.
