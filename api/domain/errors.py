@@ -86,6 +86,14 @@ class CrawlNotAllowed(AppError):
     message = "We can't crawl this website yet. Verify that you own it first."
     retriable = False
 
+    def __init__(self, message: str | None = None, **details: object) -> None:
+        # The reason is machine-readable so the UI can say which prerequisite
+        # failed, rather than repeating one generic sentence for all of them.
+        reason = details.pop("details_reason", None)
+        if reason:
+            details["reason"] = reason
+        super().__init__(message, **details)
+
 
 class GoogleAuthFailed(AppError):
     code = "google_auth_failed"
