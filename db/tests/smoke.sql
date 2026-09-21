@@ -741,3 +741,87 @@ begin
 end $$;
 reset role;
 reset app.user_id;
+
+
+-- ---------------------------------------------------------------------------
+-- 23. The schedule's claim. Inserting the row IS winning the right to run the
+--     slot, so the unique index has to be the thing that stops a job running
+--     twice — not a comment, not a Redis key, not an advisory lock somebody
+--     forgets to take.
+-- ---------------------------------------------------------------------------
+reset role;
+do $$
+declare first_id bigint; second_id bigint;
+begin
+    delete from scheduled_runs
+     where website_id = '5117e000-0000-0000-0000-00000000000a';
+
+    insert into scheduled_runs (organization_id, website_id, job, window_start)
+    values ('11111111-1111-1111-1111-111111111111',
+            '5117e000-0000-0000-0000-00000000000a', 'crawl_website',
+            '2026-09-23 03:07:00+00')
+    on conflict (website_id, job, window_start) do nothing
+    returning id into first_id;
+
+    insert into scheduled_runs (organization_id, website_id, job, window_start)
+    values ('11111111-1111-1111-1111-111111111111',
+            '5117e000-0000-0000-0000-00000000000a', 'crawl_website',
+            '2026-09-23 03:07:00+00')
+    on conflict (website_id, job, window_start) do nothing
+    returning id into second_id;
+
+    if first_id is null or second_id is not null then
+        raise exception 'SCHEDULE FAIL: the slot was claimed twice (% and %)',
+                        first_id, second_id;
+    end if;
+    raise notice 'PASS  a schedule slot can only be claimed once';
+
+    -- Tomorrow is a different slot, and must be claimable.
+    insert into scheduled_runs (organization_id, website_id, job, window_start)
+    values ('11111111-1111-1111-1111-111111111111',
+            '5117e000-0000-0000-0000-00000000000a', 'crawl_website',
+            '2026-09-24 03:07:00+00')
+    on conflict (website_id, job, window_start) do nothing
+    returning id into second_id;
+    if second_id is null then
+        raise exception 'SCHEDULE FAIL: the next night could not be claimed';
+    end if;
+    raise notice 'PASS  the next night is a separate claim';
+end $$;
+
+-- Readable by its own organisation, written only by the system — the same
+-- shape as llm_calls, and for the same reason: a customer may see that
+-- Tuesday's sync failed; nothing reachable from a browser may write that.
+set role app_user;
+set app.user_id = 'aaaaaaaa-0000-0000-0000-000000000001';
+do $$
+declare n int;
+begin
+    select count(*) into n from scheduled_runs;
+    if n < 2 then
+        raise exception 'SCHEDULE FAIL: org A cannot read its own runs (%)', n;
+    end if;
+
+    begin
+        insert into scheduled_runs (organization_id, website_id, job, window_start)
+        values ('11111111-1111-1111-1111-111111111111',
+                '5117e000-0000-0000-0000-00000000000a', 'crawl_website',
+                '2030-01-01 03:00:00+00');
+        raise exception 'SCHEDULE FAIL: a client role wrote the schedule log';
+    exception when insufficient_privilege then
+        raise notice 'PASS  a client role reads its schedule but cannot write it';
+    end;
+end $$;
+
+set app.user_id = 'bbbbbbbb-0000-0000-0000-000000000002';
+do $$
+declare n int;
+begin
+    select count(*) into n from scheduled_runs;
+    if n <> 0 then
+        raise exception 'SCHEDULE FAIL: org B read % of org A''s runs', n;
+    end if;
+    raise notice 'PASS  another organisation''s schedule is invisible';
+end $$;
+reset role;
+reset app.user_id;

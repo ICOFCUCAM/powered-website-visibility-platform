@@ -17,6 +17,7 @@ dependencies = [
     "cryptography>=43",
     "redis>=5.0",
     "anthropic>=1.7",
+    "celery[redis]>=5.4",
 ]
 
 [project.optional-dependencies]
@@ -68,8 +69,13 @@ name = "Only the Hub may construct a Google API client"
 type = "forbidden"
 source_modules = [
     "api.domain", "api.routers", "api.repositories",
-    "api.adapters", "api.deps", "api.main",
+    "api.adapters", "api.deps", "api.main", "api.workers",
 ]
+# `api.workers` is in that list deliberately. The nightly sync is the obvious
+# place for a worker to start building its own client "just for the scheduler";
+# instead it calls the Hub's `sync_website`, which constructs, uses and
+# discards the client itself.
+#
 # Top-level packages only: import-linter rejects subpackages of external
 # packages. `google` covers google.oauth2, google.auth and google.analytics,
 # which is the intent anyway — no Google client of any kind outside the Hub.
@@ -86,7 +92,21 @@ type = "forbidden"
 source_modules = ["api.hub"]
 forbidden_modules = [
     "api.routers", "api.crawler", "api.analysis", "api.ai", "api.reports",
+    "api.workers",
 ]
+
+# The scheduler decides WHEN, never WHAT. Everything it runs is code the API
+# already exercises, so a nightly job and a button press cannot drift apart —
+# and nothing in the request path may reach into the worker layer to make
+# something happen inline.
+[[tool.importlinter.contracts]]
+name = "The request path does not import the workers"
+type = "forbidden"
+source_modules = [
+    "api.routers", "api.repositories", "api.domain", "api.adapters", "api.deps",
+    "api.hub", "api.analysis", "api.crawler", "api.ai", "api.reports",
+]
+forbidden_modules = ["api.workers"]
 
 # The other direction, which matters more for extraction: the core must never
 # reach into the Hub. api.main is excluded because it is the composition root —
@@ -107,7 +127,7 @@ type = "forbidden"
 source_modules = [
     "api.domain", "api.routers", "api.repositories", "api.adapters",
     "api.analysis", "api.crawler", "api.hub", "api.reports", "api.deps",
-    "api.main",
+    "api.main", "api.workers",
 ]
 forbidden_modules = ["anthropic"]
 # Direct imports only. Reaching the SDK *through* api.ai is the design — the

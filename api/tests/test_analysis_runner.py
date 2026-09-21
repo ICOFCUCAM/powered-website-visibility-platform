@@ -321,3 +321,59 @@ async def test_one_broken_rule_does_not_lose_the_other_findings(
     assert "missing_title" not in issues         # the broken rule found nothing
     assert "missing_meta_description" in issues  # the other rules still ran
     assert result.issues_open > 0
+
+
+async def test_analysing_without_a_crawl_id_uses_the_latest_crawl(
+    analysed, service_conn
+):
+    """`crawl_id=None` means the latest completed crawl, not "no crawl".
+
+    With no pages in the context every crawl-derived rule finds nothing, and
+    reconciliation reads "nothing found" as "everything fixed" — so a nightly
+    re-score that passed None would quietly mark a customer's whole audit
+    resolved. It is the sort of bug that looks like good news on the
+    dashboard.
+    """
+    from api.analysis.runner import AnalysisRunner
+
+    run, org, website_id = analysed
+    site = FakeWebsite(
+        pages={
+            "/": page("Home", links=("/bad",)),
+            "/bad": page("", description=None),
+        },
+        sitemap=sitemap_for(["/", "/bad"]),
+    )
+    first = await run(site)
+    assert first.issues_open >= 1
+
+    again = await AnalysisRunner(service_conn).run(
+        organization_id=org, website_id=website_id, crawl_id=None
+    )
+    assert again.pages_evaluated == first.pages_evaluated
+    assert again.issues_open == first.issues_open
+    assert again.issues_resolved == 0, "a re-score must not resolve the audit"
+
+
+async def test_a_website_with_no_crawl_refuses_to_be_scored(service_conn, two_tenants):
+    """Rather than analysing an empty page set and producing a score from
+    nothing."""
+    import uuid
+
+    import pytest
+
+    from api.analysis.runner import AnalysisRunner, NoCrawlToAnalyse
+
+    org = two_tenants["org_a"]
+    row = await (
+        await service_conn.execute(
+            "insert into websites (organization_id, domain, canonical_url) "
+            "values (%s,%s,'https://nocrawl.example/') returning id",
+            (org, f"{uuid.uuid4().hex[:8]}.example"),
+        )
+    ).fetchone()
+
+    with pytest.raises(NoCrawlToAnalyse):
+        await AnalysisRunner(service_conn).run(
+            organization_id=org, website_id=row["id"], crawl_id=None
+        )

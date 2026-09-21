@@ -116,6 +116,29 @@ async def service_session() -> AsyncIterator[AsyncConnection]:
             yield conn
 
 
+@asynccontextmanager
+async def service_task() -> AsyncIterator[AsyncConnection]:
+    """A service connection for long background work, WITHOUT a wrapping
+    transaction.
+
+    `service_session` holds one transaction for its whole scope, which is
+    right for a request and wrong for a job. Two reasons:
+
+      A 500-page crawl inside one transaction is a transaction open for
+      minutes, holding back vacuum and accumulating locks the whole time.
+
+      And a failure rolls the whole thing back — including the row the job
+      was about to write to say that it failed. A scheduler whose failure
+      record disappears with the failure has no failure record.
+
+    So every statement commits as it goes, and a job that dies halfway leaves
+    both the work it managed and the note explaining why it stopped.
+    """
+    async with _require_service_pool().connection() as conn:
+        conn.row_factory = dict_row
+        yield conn
+
+
 async def fetch_all(
     conn: AsyncConnection, sql: str, params: tuple[Any, ...] = ()
 ) -> list[dict[str, Any]]:

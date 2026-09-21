@@ -14,9 +14,7 @@ from api.domain.errors import NotFound
 from api.hub.deps import GoogleClientDep, ServiceConnectionDep, TokenVaultDep
 from api.hub.providers.google.errors import GoogleRefreshRejected
 from api.hub.repositories import HubRepository
-from api.hub.services import events
-from api.hub.services.sync.search_console import SearchConsoleSync
-from api.hub.services.tokens import TokenService
+from api.hub.services.sync.orchestrator import Skipped, sync_website
 
 router = APIRouter(prefix="/websites", tags=["google"])
 
@@ -72,43 +70,16 @@ async def sync_search_console(
     someone's quota on every page load.
     """
     repo = HubRepository(conn)
-    _, link = await _authorised_link(
-        website_id, memberships, websites, repo, "search_console"
-    )
+    # Authorisation stays here — it is the route's job, and the orchestrator
+    # runs as the service role with no user to check against.
+    await _authorised_link(website_id, memberships, websites, repo, "search_console")
 
-    if link["connection_status"] != "active":
+    outcome = await sync_website(
+        conn, website_id=website_id, service="search_console",
+        client=client, vault=vault,
+    )
+    if isinstance(outcome, Skipped):
         raise GoogleRefreshRejected()
-
-    tokens = TokenService(conn, vault, client)
-    access_token = await tokens.access_token_for(link["connection_id"])
-    sync = SearchConsoleSync(conn, client)
-
-    already = await repo.active_links(website_id)
-    backfilled = any(
-        row["service"] == "search_console" and row["backfill_completed_at"]
-        for row in already
-    )
-
-    run = sync.incremental if backfilled else sync.backfill
-    outcome = await run(
-        organization_id=link["organization_id"],
-        website_id=website_id,
-        link_id=link["link_id"],
-        property_uri=link["property_uri"],
-        access_token=access_token,
-    )
-
-    await events.publish(
-        events.DomainEvent(
-            events.SYNC_COMPLETED if outcome.status != "failed" else events.SYNC_FAILED,
-            {
-                "website_id": str(website_id),
-                "service": "search_console",
-                "kind": "incremental" if backfilled else "backfill",
-                "rows_written": outcome.rows_written,
-            },
-        )
-    )
 
     return SyncResultOut(
         status=outcome.status,

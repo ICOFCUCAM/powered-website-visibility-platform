@@ -69,6 +69,20 @@ def google_client(settings: GoogleSettingsDep) -> GoogleClient:
 
 GoogleClientDep = Annotated[GoogleClient, Depends(google_client)]
 
+
+# -- outside a request --------------------------------------------------------
+# The nightly workers need the same collaborators with no request to hang them
+# off. They go through the Hub rather than building their own, because the
+# boundary is "only the Hub may construct a Google API client" and a worker is
+# not an exception to it.
+def google_settings_from_env() -> GoogleSettings:
+    return get_settings().google()
+
+
+def google_client_from(settings: GoogleSettings) -> GoogleClient:
+    return GoogleClient(settings.client_id, settings.client_secret, http=http_client())
+
+
 _state_store_override: StateStore | None = None
 
 

@@ -6,3 +6,9 @@ __pycache__/
 *.egg-info/
 .env
 .env.local
+
+# Local stand-in for object storage until the bucket exists.
+var/
+
+# Celery beat keeps its last-run state here.
+celerybeat-schedule*

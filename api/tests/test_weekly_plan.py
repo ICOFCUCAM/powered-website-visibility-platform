@@ -339,3 +339,27 @@ def test_the_window_is_the_dashboards_window():
 def test_the_week_starts_on_monday():
     assert week_start_for(date(2026, 9, 24)) == date(2026, 9, 21)
     assert week_start_for(date(2026, 9, 21)) == date(2026, 9, 21)
+
+
+async def test_a_website_with_nothing_wrong_still_gets_a_plan(website):
+    """The shape nobody writes a fixture for: the healthy customer.
+
+    Every other test here seeds issues first, so a clean audit went
+    unexercised until the nightly scheduler ran against real data and 26
+    websites with nothing open crashed the job on a check constraint. A plan
+    saying "nothing needs doing" is a legitimate weekly output.
+    """
+    org, website_id, conn = website
+
+    result = await plan_service(conn, org, website_id).generate(as_of=AS_OF)
+
+    assert result.priorities == []
+    assert result.fallback_reason == "no_findings"
+    assert result.summary
+
+    stored = await (
+        await conn.execute(
+            "select fallback_reason from plans where id = %s", (result.plan_id,)
+        )
+    ).fetchone()
+    assert stored["fallback_reason"] == "no_findings"

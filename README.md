@@ -9,7 +9,7 @@ Discover → Diagnose → Recommend → Fix → Measure → Repeat
 
 ## Status
 
-**V1 is complete — M0 through M9.** The database, the API, the Google
+**V1 is complete, and it runs by itself.** The database, the API, the Google
 connection layer (OAuth with PKCE, encrypted token vault, property discovery,
 auto-matching, linking, ownership), Search Console and GA4 synchronisation,
 the crawler, the rules engine and scoring, the dashboard and audit screens,
@@ -55,6 +55,13 @@ and the Strategist, which answers from that data and nothing else:
   ▸ 3 checks against your data
 ```
 
+Every night the schedule syncs Google, crawls, re-scores, rewrites the plan
+and — on Mondays — builds the report, each website on its own minute so the
+fleet does not arrive at Google's door together. A missed window is late, not
+lost: the dispatcher claims the most recent slot that has passed, so a worker
+pool that was down overnight catches up rather than skipping a day. See
+[13-scheduler.md](docs/13-scheduler.md).
+
 The Strategist reads through nine typed, read-only tools. It writes no SQL and
 cannot name a tenant: no tool schema contains an organisation or website id,
 so scope comes from the session and there is no argument that could reach
@@ -81,6 +88,8 @@ eval "$(./scripts/dev-db.sh)"
 export JWT_SECRET=<at least 32 bytes>
 .venv/bin/uvicorn api.main:app --port 8000     # API
 cd web && npm run dev                          # UI on :3000
+./scripts/worker.sh beat                       # the nightly clock
+./scripts/worker.sh all                        # every worker pool (dev)
 ./scripts/check.sh       # lint, import contracts, pytest, schema, typecheck
 ```
 
@@ -96,6 +105,7 @@ cd web && npm run dev                          # UI on :3000
 | `api/ai/` | The only module that may reach a model. Versioned prompts, the evidence cache, budget admission, the numbers validator, the weekly plan, the Strategist loop. |
 | `api/ai/tools/` | The nine typed, read-only queries the Strategist may run. Scope is bound server-side; no schema names a tenant. |
 | `api/reports/` | Weekly report assembly, the HTML and text email, signed links, delivery. |
+| `api/workers/` | The nightly schedule. Decides *when*; everything it runs is code the API already exercises. |
 | `web/` | Next.js: onboarding wizard, dashboard, audit, this week's plan, the assistant, sign-in. |
 | `db/` | Migrations, roles, schema tests. |
 
@@ -118,6 +128,7 @@ The technical specification in [`docs/`](docs/) remains the source of truth.
 | [10-decisions.md](docs/10-decisions.md) | **Frozen.** Locked decisions, and the ones still open |
 | [11-expansion.md](docs/11-expansion.md) | Seams for everything deliberately not in V1 |
 | [12-v1-conformance.md](docs/12-v1-conformance.md) | **Frozen.** Section-by-section against the V1 spec |
+| [13-scheduler.md](docs/13-scheduler.md) | The nightly schedule: claims, leases, pools, what an operator reads |
 
 ## V1 → V2 → V3
 

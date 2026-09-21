@@ -42,6 +42,10 @@ from api.analysis.scoring import (
 
 logger = logging.getLogger("visibility_hub.analysis")
 
+
+class NoCrawlToAnalyse(RuntimeError):
+    """There is nothing to reconcile against. See `AnalysisRunner.run`."""
+
 ANALYSIS_WINDOW_DAYS = 28
 CURVE_WINDOW_DAYS = 90
 GSC_LAG_DAYS = 3
@@ -67,6 +71,22 @@ class AnalysisRunner:
     async def run(
         self, *, organization_id: UUID, website_id: UUID, crawl_id: UUID | None
     ) -> AnalysisResult:
+        """`crawl_id=None` means THE LATEST COMPLETED CRAWL, not "no crawl".
+
+        The distinction is not pedantic. With no pages in the context every
+        crawl-derived rule finds nothing, and reconciliation reads "nothing
+        found" as "everything fixed" — so a nightly re-score that passed None
+        would quietly mark a customer's whole audit resolved. It is the sort
+        of bug that looks like good news on the dashboard.
+
+        A website with no completed crawl raises rather than analysing an
+        empty page set, because there is no honest score to produce from one.
+        """
+        crawl_id = crawl_id or await self._latest_crawl(website_id)
+        if crawl_id is None:
+            raise NoCrawlToAnalyse(
+                f"website {website_id} has no completed crawl to analyse"
+            )
         ctx = await self._context(website_id, crawl_id)
         findings = self._evaluate(ctx)
         result = await self._reconcile(
@@ -76,6 +96,15 @@ class AnalysisRunner:
         return result
 
     # -- context -----------------------------------------------------------
+
+    async def _latest_crawl(self, website_id: UUID) -> UUID | None:
+        row = await fetch_one(
+            self._conn,
+            "select id from crawls where website_id = %s and status = 'completed'"
+            " order by finished_at desc nulls last limit 1",
+            (website_id,),
+        )
+        return row["id"] if row else None
 
     async def _context(self, website_id: UUID, crawl_id: UUID | None) -> AnalysisContext:
         site = await fetch_one(

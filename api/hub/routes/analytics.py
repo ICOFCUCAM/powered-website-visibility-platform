@@ -17,9 +17,9 @@ from pydantic import BaseModel, Field
 from api.deps import MembershipsDep, WebsiteRepoDep
 from api.domain.errors import NotFound
 from api.hub.deps import GoogleClientDep, ServiceConnectionDep, TokenVaultDep
+from api.hub.providers.google.errors import GoogleRefreshRejected
 from api.hub.repositories import HubRepository
-from api.hub.services import events
-from api.hub.services.sync.analytics import AnalyticsSync
+from api.hub.services.sync.orchestrator import Skipped, sync_website
 from api.hub.services.tokens import TokenService
 
 router = APIRouter(prefix="/websites", tags=["analytics"])
@@ -147,33 +147,14 @@ async def sync_analytics(
     client: GoogleClientDep,
 ) -> AnalyticsSyncOut:
     repo = HubRepository(conn)
-    _, link = await _link(website_id, memberships, websites, repo)
+    await _link(website_id, memberships, websites, repo)
 
-    token = await TokenService(conn, vault, client).access_token_for(
-        link["connection_id"]
+    outcome = await sync_website(
+        conn, website_id=website_id, service="analytics",
+        client=client, vault=vault,
     )
-    already = await repo.active_links(website_id)
-    backfilled = any(
-        row["service"] == "analytics" and row["backfill_completed_at"]
-        for row in already
-    )
-
-    sync = AnalyticsSync(conn, client)
-    run = sync.incremental if backfilled else sync.backfill
-    outcome = await run(
-        organization_id=link["organization_id"],
-        website_id=website_id,
-        link_id=link["link_id"],
-        property_uri=link["property_uri"],
-        access_token=token,
-    )
-
-    await events.publish(
-        events.DomainEvent(
-            events.SYNC_COMPLETED if outcome.status != "failed" else events.SYNC_FAILED,
-            {"website_id": str(website_id), "service": "analytics"},
-        )
-    )
+    if isinstance(outcome, Skipped):
+        raise GoogleRefreshRejected()
 
     return AnalyticsSyncOut(
         status=outcome.status,
