@@ -97,15 +97,23 @@ def _pct(now: float | None, before: float | None) -> float | None:
 
 
 def _anonymised(row) -> AnonymisedOut:
-    share = row.get("anonymised_share") if row else None
+    row = row or {}
+    # Before the query sync has run, every click looks anonymised because
+    # nothing accounts for it. Saying so would tell the customer Google
+    # withheld all their data when we simply had not fetched it.
+    known = bool(row.get("has_query_data"))
+    share = row.get("anonymised_share") if known else None
+
     return AnonymisedOut(
-        total_clicks=int((row or {}).get("total_clicks") or 0),
-        attributed_clicks=int((row or {}).get("attributed_clicks") or 0),
-        anonymised_clicks=int((row or {}).get("anonymised_clicks") or 0),
+        total_clicks=int(row.get("total_clicks") or 0),
+        attributed_clicks=int(row.get("attributed_clicks") or 0),
+        anonymised_clicks=int(row.get("anonymised_clicks") or 0) if known else 0,
         anonymised_share=float(share) if share is not None else None,
         note=(
             "Google withholds low-volume queries, so the rows below do not add "
             "up to the site totals. The difference is shown as anonymised."
+            if known
+            else "Search terms haven't been synced for this period yet."
         ),
     )
 

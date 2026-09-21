@@ -137,6 +137,82 @@ export interface Goal {
   is_primary: boolean;
 }
 
+export interface Dashboard {
+  website: { id: string; domain: string; name: string | null; status: string; ownership_verified: boolean };
+  score: {
+    total: number;
+    as_of: string;
+    components: Record<string, number | null>;
+    change_pct: number | null;
+    compared_to: string | null;
+    is_first_measurement: boolean;
+  } | null;
+  attention: {
+    critical: number;
+    content_opportunities: number;
+    losing_visibility: number;
+    gaining_visibility: number;
+  };
+  opportunities: {
+    type_key: string;
+    headline: string;
+    count: number;
+    estimated_clicks: number;
+    severity: string;
+    category: string;
+  }[];
+  search: {
+    clicks: number;
+    impressions: number;
+    ctr: number | null;
+    position: number | null;
+    change: { clicks: number | null; impressions: number | null; position: number | null } | null;
+    anonymised_clicks: number;
+    note: string;
+  } | null;
+  analytics: {
+    connected: boolean;
+    sessions: number;
+    active_users: number;
+    engagement_rate: number | null;
+    outcomes_configured: boolean;
+  };
+  recent_changes: { observed_at: string; kind: string; title: string; url: string | null }[];
+  freshness: {
+    last_crawl_at: string | null;
+    pages_crawled: number | null;
+    search_data_through: string | null;
+    stale: boolean;
+  };
+  setup_hint: string | null;
+}
+
+export interface Issue {
+  id: string;
+  type_key: string;
+  title: string;
+  summary: string;
+  category: string;
+  severity: string;
+  status: string;
+  scope_type: string;
+  impact_score: number;
+  effort: string;
+  url: string | null;
+  evidence: Record<string, unknown>;
+  first_detected_at: string;
+  last_detected_at: string;
+}
+
+export interface Audit {
+  checks_run: number;
+  issues_open: number;
+  counts: Record<string, number>;
+  by_category: Record<string, number>;
+  issues: Issue[];
+  search_data_available: boolean;
+}
+
 export const api = {
   me: (token: string) => request<Me>("/auth/me", token),
   listWebsites: (token: string) => request<Website[]>("/websites", token),
@@ -195,6 +271,21 @@ export const api = {
 
   website: (token: string, websiteId: string) =>
     request<Website>(`/websites/${websiteId}`, token),
+
+  dashboard: (token: string, websiteId: string) =>
+    request<Dashboard>(`/websites/${websiteId}/dashboard`, token),
+
+  audit: (token: string, websiteId: string, category?: string) =>
+    request<Audit>(
+      `/websites/${websiteId}/audit${category ? `?category=${category}` : ""}`,
+      token,
+    ),
+
+  resolveIssue: (token: string, websiteId: string, issueId: string, note?: string) =>
+    request<Issue>(`/websites/${websiteId}/audit/${issueId}/resolve`, token, {
+      method: "POST",
+      body: JSON.stringify({ note: note ?? null }),
+    }),
 
   keyEvents: (token: string, websiteId: string) =>
     request<KeyEvent[]>(`/websites/${websiteId}/analytics/events`, token),

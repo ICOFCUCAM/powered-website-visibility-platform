@@ -86,22 +86,29 @@ class PerformanceRepository:
     ) -> dict[str, Any] | None:
         """How many clicks Google withheld from the query dimension.
 
-        Surfaced with every sliced response so the gap is explained rather
-        than discovered by a user who adds up the query table.
+        `has_query_data` matters more than it looks. The gap is computed as
+        site totals minus what the query rows account for — so before the
+        query sync has run, EVERY click looks anonymised. Reporting that would
+        tell a customer Google withheld all their data when in fact we simply
+        had not fetched it yet. Absence of data is not anonymisation.
         """
         return await fetch_one(
             self._conn,
             """
-            select coalesce(sum(total_clicks), 0)      as total_clicks,
-                   coalesce(sum(attributed_clicks), 0) as attributed_clicks,
-                   coalesce(sum(anonymised_clicks), 0) as anonymised_clicks,
-                   case when sum(total_clicks) > 0
-                        then sum(anonymised_clicks)::numeric / sum(total_clicks) end
-                                                       as anonymised_share
-              from gsc_anonymised_share
-             where website_id = %s and date between %s and %s
+            select coalesce(sum(a.total_clicks), 0)      as total_clicks,
+                   coalesce(sum(a.attributed_clicks), 0) as attributed_clicks,
+                   coalesce(sum(a.anonymised_clicks), 0) as anonymised_clicks,
+                   case when sum(a.total_clicks) > 0
+                        then sum(a.anonymised_clicks)::numeric / sum(a.total_clicks)
+                        end                              as anonymised_share,
+                   exists(
+                       select 1 from gsc_query_daily q
+                        where q.website_id = %s and q.date between %s and %s
+                   )                                     as has_query_data
+              from gsc_anonymised_share a
+             where a.website_id = %s and a.date between %s and %s
             """,
-            (website_id, start, end),
+            (website_id, start, end, website_id, start, end),
         )
 
     async def top_queries(
