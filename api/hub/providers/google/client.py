@@ -30,6 +30,14 @@ AUTH_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth"
 TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token"
 REVOKE_ENDPOINT = "https://oauth2.googleapis.com/revoke"
 SEARCH_CONSOLE_SITES = "https://searchconsole.googleapis.com/webmasters/v3/sites"
+SEARCH_CONSOLE_QUERY = (
+    "https://searchconsole.googleapis.com/webmasters/v3/sites/"
+    "{property}/searchAnalytics/query"
+)
+
+#: Search Console caps a response at 25,000 rows. Anything larger is paginated
+#: with startRow, which is why every fetch here is a loop rather than a call.
+SEARCH_ANALYTICS_ROW_LIMIT = 25_000
 ANALYTICS_ACCOUNT_SUMMARIES = (
     "https://analyticsadmin.googleapis.com/v1beta/accountSummaries"
 )
@@ -222,3 +230,77 @@ class GoogleClient:
             if uri:
                 urls.append(uri)
         return urls
+
+    async def query_search_analytics(
+        self,
+        access_token: str,
+        property_uri: str,
+        *,
+        start_date: str,
+        end_date: str,
+        dimensions: list[str],
+        row_limit: int = SEARCH_ANALYTICS_ROW_LIMIT,
+        start_row: int = 0,
+        data_state: str = "final",
+    ) -> list[dict[str, Any]]:
+        """One page of Search Analytics rows.
+
+        `data_state` stays "final": Google restates recent days, and showing
+        fresh-but-provisional numbers means a chart that changes under the
+        user with no explanation.
+
+        The property URI is path-encoded with `safe=""` because a domain
+        property is `sc-domain:example.com` and a URL-prefix property contains
+        `https://` — both of which must survive as a single path segment.
+        """
+        from urllib.parse import quote
+
+        url = SEARCH_CONSOLE_QUERY.format(property=quote(property_uri, safe=""))
+        response = await self._http.post(
+            url,
+            headers={"Authorization": f"Bearer {access_token}"},
+            json={
+                "startDate": start_date,
+                "endDate": end_date,
+                "dimensions": dimensions,
+                "rowLimit": row_limit,
+                "startRow": start_row,
+                "dataState": data_state,
+            },
+        )
+        _raise_for(response)
+        return response.json().get("rows", [])
+
+    async def iter_search_analytics(
+        self,
+        access_token: str,
+        property_uri: str,
+        *,
+        start_date: str,
+        end_date: str,
+        dimensions: list[str],
+        max_rows: int | None = None,
+    ) -> list[dict[str, Any]]:
+        """Every row for a range, following pagination to the end.
+
+        Stopping at the first page would quietly truncate a busy site's data,
+        and the resulting chart would look plausible while being wrong.
+        """
+        rows: list[dict[str, Any]] = []
+        start_row = 0
+
+        while True:
+            page = await self.query_search_analytics(
+                access_token,
+                property_uri,
+                start_date=start_date,
+                end_date=end_date,
+                dimensions=dimensions,
+                start_row=start_row,
+            )
+            rows.extend(page)
+            if len(page) < SEARCH_ANALYTICS_ROW_LIMIT:
+                return rows
+            if max_rows is not None and len(rows) >= max_rows:
+                return rows[:max_rows]
+            start_row += len(page)

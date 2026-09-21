@@ -274,6 +274,205 @@ class HubRepository:
             (website_id,),
         )
 
+    # -- sync runs ---------------------------------------------------------
+
+    async def start_sync_run(
+        self,
+        *,
+        organization_id: UUID,
+        website_id: UUID,
+        link_id: UUID | None,
+        provider_key: str,
+        service: str,
+        kind: str,
+        range_start: Any,
+        range_end: Any,
+    ) -> UUID:
+        row = await fetch_one(
+            self._conn,
+            """
+            insert into sync_runs
+                (organization_id, website_id, website_connection_id, provider_key,
+                 service, kind, range_start, range_end, status)
+            values (%s, %s, %s, %s, %s, %s, %s, %s, 'running')
+            returning id
+            """,
+            (
+                organization_id,
+                website_id,
+                link_id,
+                provider_key,
+                service,
+                kind,
+                range_start,
+                range_end,
+            ),
+        )
+        assert row is not None
+        return row["id"]
+
+    async def finish_sync_run(
+        self,
+        run_id: UUID,
+        *,
+        status: str,
+        rows_written: int,
+        api_calls: int,
+        quota_hits: int,
+        error: str | None,
+    ) -> None:
+        """A partial sync is recorded as `partial` with its range, so a gap in
+        a chart is explainable and re-runnable rather than permanent."""
+        await self._conn.execute(
+            """
+            update sync_runs
+               set status = %s, rows_written = %s, api_calls = %s,
+                   quota_hits = %s, error = %s, finished_at = now()
+             where id = %s
+            """,
+            (status, rows_written, api_calls, quota_hits, error, run_id),
+        )
+
+    async def record_synced_through(self, link_id: UUID, through: Any) -> None:
+        """Monotonic: an incremental run covering a trailing window must not
+        drag `last_synced_date` backwards past what a backfill already got."""
+        await self._conn.execute(
+            "update website_connections "
+            "   set last_synced_date = greatest(coalesce(last_synced_date, %s), %s) "
+            " where id = %s",
+            (through, through, link_id),
+        )
+
+    async def record_backfill_complete(self, link_id: UUID) -> None:
+        await self._conn.execute(
+            "update website_connections set backfill_completed_at = now() "
+            " where id = %s and backfill_completed_at is null",
+            (link_id,),
+        )
+
+    async def last_sync_runs(
+        self, website_id: UUID, limit: int = 20
+    ) -> list[dict[str, Any]]:
+        return await fetch_all(
+            self._conn,
+            """
+            select id, service, kind, status, range_start, range_end,
+                   rows_written, api_calls, quota_hits, error,
+                   started_at, finished_at
+              from sync_runs
+             where website_id = %s
+             order by started_at desc
+             limit %s
+            """,
+            (website_id, limit),
+        )
+
+    # -- Search Console facts ---------------------------------------------
+    #
+    # Upserts, not inserts: the nightly run re-fetches a trailing window
+    # because Google restates recent days, so a second write for the same day
+    # must replace the first rather than collide with it.
+
+    async def upsert_gsc_totals(
+        self, organization_id: UUID, website_id: UUID, rows: list[tuple]
+    ) -> int:
+        if not rows:
+            return 0
+        async with self._conn.cursor() as cur:
+            await cur.executemany(
+                """
+                insert into gsc_totals_daily
+                    (organization_id, website_id, date, clicks, impressions, position)
+                values (%s, %s, %s, %s, %s, %s)
+                on conflict (website_id, date) do update
+                   set clicks = excluded.clicks,
+                       impressions = excluded.impressions,
+                       position = excluded.position
+                """,
+                [(organization_id, website_id, *r) for r in rows],
+            )
+        return len(rows)
+
+    async def upsert_gsc_queries(
+        self, organization_id: UUID, website_id: UUID, rows: list[tuple]
+    ) -> int:
+        if not rows:
+            return 0
+        async with self._conn.cursor() as cur:
+            await cur.executemany(
+                """
+                insert into gsc_query_daily
+                    (organization_id, website_id, date, query_hash, query,
+                     clicks, impressions, position)
+                values (%s, %s, %s, %s, %s, %s, %s, %s)
+                on conflict (website_id, date, query_hash, country, device)
+                do update set clicks = excluded.clicks,
+                              impressions = excluded.impressions,
+                              position = excluded.position
+                """,
+                [(organization_id, website_id, *r) for r in rows],
+            )
+        return len(rows)
+
+    async def upsert_gsc_pages(
+        self, organization_id: UUID, website_id: UUID, rows: list[tuple]
+    ) -> int:
+        if not rows:
+            return 0
+        async with self._conn.cursor() as cur:
+            await cur.executemany(
+                """
+                insert into gsc_page_daily
+                    (organization_id, website_id, date, url_hash, url,
+                     clicks, impressions, position)
+                values (%s, %s, %s, %s, %s, %s, %s, %s)
+                on conflict (website_id, date, url_hash, country, device)
+                do update set clicks = excluded.clicks,
+                              impressions = excluded.impressions,
+                              position = excluded.position
+                """,
+                [(organization_id, website_id, *r) for r in rows],
+            )
+        return len(rows)
+
+    async def upsert_gsc_query_pages(
+        self, organization_id: UUID, website_id: UUID, rows: list[tuple]
+    ) -> int:
+        if not rows:
+            return 0
+        async with self._conn.cursor() as cur:
+            await cur.executemany(
+                """
+                insert into gsc_query_page_daily
+                    (organization_id, website_id, date, query_hash, query,
+                     url_hash, url, clicks, impressions, position)
+                values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                on conflict (website_id, date, query_hash, url_hash)
+                do update set clicks = excluded.clicks,
+                              impressions = excluded.impressions,
+                              position = excluded.position
+                """,
+                [(organization_id, website_id, *r) for r in rows],
+            )
+        return len(rows)
+
+    async def active_link_for(
+        self, website_id: UUID, service: str
+    ) -> dict[str, Any] | None:
+        return await fetch_one(
+            self._conn,
+            """
+            select l.id as link_id, l.website_id, l.organization_id,
+                   p.property_uri, p.connection_id, c.status as connection_status
+              from website_connections l
+              join connection_properties p on p.id = l.property_id
+              join connections c on c.id = p.connection_id
+             where l.website_id = %s and l.service = %s and l.status = 'active'
+             limit 1
+            """,
+            (website_id, service),
+        )
+
     async def record_ownership(
         self, website_id: UUID, property_id: UUID, method: str
     ) -> None:

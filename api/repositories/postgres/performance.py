@@ -1,0 +1,173 @@
+"""Reading Search Console performance.
+
+Core-side: reads the normalised tables the Hub writes, and never constructs a
+Google client. That is the boundary that makes the dashboard survive a Google
+outage — the read path serves the last sync and says when it was.
+
+Every rollup weights `position` by impressions. `avg(position)` is wrong in a
+way that looks entirely plausible: position 3 on 1,000 impressions and
+position 20 on 10 averages to 11.5, when the site is effectively at 3.2.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import date
+from typing import Any
+from uuid import UUID
+
+from psycopg import AsyncConnection
+
+from api.adapters.db import fetch_all, fetch_one
+
+
+@dataclass(frozen=True, slots=True)
+class Totals:
+    clicks: int
+    impressions: int
+    ctr: float | None
+    position: float | None
+
+    @classmethod
+    def of(cls, row: dict[str, Any] | None) -> Totals:
+        if not row or not row.get("impressions"):
+            return cls(0, 0, None, None)
+        return cls(
+            clicks=int(row["clicks"] or 0),
+            impressions=int(row["impressions"] or 0),
+            ctr=float(row["ctr"]) if row["ctr"] is not None else None,
+            position=float(row["position"]) if row["position"] is not None else None,
+        )
+
+
+class PerformanceRepository:
+    def __init__(self, conn: AsyncConnection) -> None:
+        self._conn = conn
+
+    async def totals(
+        self, website_id: UUID, start: date, end: date
+    ) -> dict[str, Any] | None:
+        """From the RECONCILIATION AUTHORITY, never from summed query rows."""
+        return await fetch_one(
+            self._conn,
+            """
+            select coalesce(sum(clicks), 0)      as clicks,
+                   coalesce(sum(impressions), 0) as impressions,
+                   case when sum(impressions) > 0
+                        then sum(clicks)::numeric / sum(impressions) end as ctr,
+                   case when sum(impressions) > 0
+                        then sum(position * impressions) / sum(impressions) end
+                                                 as position
+              from gsc_totals_daily
+             where website_id = %s and date between %s and %s
+            """,
+            (website_id, start, end),
+        )
+
+    async def daily_series(
+        self, website_id: UUID, start: date, end: date
+    ) -> list[dict[str, Any]]:
+        return await fetch_all(
+            self._conn,
+            """
+            select date, clicks, impressions,
+                   case when impressions > 0
+                        then clicks::numeric / impressions end as ctr,
+                   position
+              from gsc_totals_daily
+             where website_id = %s and date between %s and %s
+             order by date
+            """,
+            (website_id, start, end),
+        )
+
+    async def anonymised_share(
+        self, website_id: UUID, start: date, end: date
+    ) -> dict[str, Any] | None:
+        """How many clicks Google withheld from the query dimension.
+
+        Surfaced with every sliced response so the gap is explained rather
+        than discovered by a user who adds up the query table.
+        """
+        return await fetch_one(
+            self._conn,
+            """
+            select coalesce(sum(total_clicks), 0)      as total_clicks,
+                   coalesce(sum(attributed_clicks), 0) as attributed_clicks,
+                   coalesce(sum(anonymised_clicks), 0) as anonymised_clicks,
+                   case when sum(total_clicks) > 0
+                        then sum(anonymised_clicks)::numeric / sum(total_clicks) end
+                                                       as anonymised_share
+              from gsc_anonymised_share
+             where website_id = %s and date between %s and %s
+            """,
+            (website_id, start, end),
+        )
+
+    async def top_queries(
+        self,
+        website_id: UUID,
+        start: date,
+        end: date,
+        *,
+        order_by: str = "clicks",
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        return await self._top(
+            "gsc_query_daily", "query_hash", "query", website_id, start, end,
+            order_by, limit,
+        )
+
+    async def top_pages(
+        self,
+        website_id: UUID,
+        start: date,
+        end: date,
+        *,
+        order_by: str = "clicks",
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        return await self._top(
+            "gsc_page_daily", "url_hash", "url", website_id, start, end,
+            order_by, limit,
+        )
+
+    _ORDERABLE = {
+        "clicks": "clicks desc",
+        "impressions": "impressions desc",
+        "ctr": "ctr desc nulls last",
+        # Ascending: position 1 is the best, so "order by position" meaning
+        # "worst first" would surprise every user who has ever used Search
+        # Console.
+        "position": "position asc nulls last",
+    }
+
+    async def _top(
+        self,
+        table: str,
+        key_column: str,
+        label_column: str,
+        website_id: UUID,
+        start: date,
+        end: date,
+        order_by: str,
+        limit: int,
+    ) -> list[dict[str, Any]]:
+        # Allowlisted, never interpolated from user input.
+        ordering = self._ORDERABLE.get(order_by, self._ORDERABLE["clicks"])
+        sql = f"""
+            select min({label_column}) as label,
+                   sum(clicks)         as clicks,
+                   sum(impressions)    as impressions,
+                   case when sum(impressions) > 0
+                        then sum(clicks)::numeric / sum(impressions) end as ctr,
+                   case when sum(impressions) > 0
+                        then sum(position * impressions) / sum(impressions) end
+                                       as position
+              from {table}
+             where website_id = %s and date between %s and %s
+             group by {key_column}
+             order by {ordering}
+             limit %s
+        """
+        return await fetch_all(self._conn, sql, (website_id, start, end, limit))

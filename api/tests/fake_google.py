@@ -21,6 +21,7 @@ import httpx
 
 from api.hub.providers.google.client import (
     ANALYTICS_ACCOUNT_SUMMARIES,
+    SEARCH_ANALYTICS_ROW_LIMIT,
     SEARCH_CONSOLE_SITES,
     TOKEN_ENDPOINT,
 )
@@ -60,6 +61,12 @@ class FakeGoogle:
     analytics_accounts: list[dict[str, Any]] = field(default_factory=list)
     stream_urls: dict[str, list[str]] = field(default_factory=dict)
 
+    # Search Analytics. Keyed by the dimension tuple, e.g. ("date","query").
+    # Values are (keys, clicks, impressions, position) tuples.
+    search_analytics: dict[tuple[str, ...], list[tuple]] = field(default_factory=dict)
+    search_analytics_calls: list[dict[str, Any]] = field(default_factory=list)
+    quota_exceeded_after: int | None = None
+
     # Failure switches
     refresh_invalid_grant: bool = False
     exchange_fails: bool = False
@@ -96,6 +103,8 @@ class FakeGoogle:
             return httpx.Response(
                 200, json={"accountSummaries": self.analytics_accounts}
             )
+        if "/searchAnalytics/query" in url:
+            return self._search_analytics(request)
         if "/dataStreams" in url:
             prop = url.split("/v1beta/")[1].rsplit("/dataStreams", 1)[0]
             self.stream_lookups.append(prop)
@@ -109,6 +118,35 @@ class FakeGoogle:
                 },
             )
         return httpx.Response(404, json={"error": "unexpected endpoint"})
+
+    def _search_analytics(self, request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        self.search_analytics_calls.append(body)
+
+        if (
+            self.quota_exceeded_after is not None
+            and len(self.search_analytics_calls) > self.quota_exceeded_after
+        ):
+            return httpx.Response(429, json={"error": {"code": 429}})
+
+        dims = tuple(body["dimensions"])
+        start, end = body["startDate"], body["endDate"]
+        rows = [
+            {
+                "keys": list(keys),
+                "clicks": clicks,
+                "impressions": impressions,
+                "ctr": (clicks / impressions) if impressions else 0.0,
+                "position": position,
+            }
+            for keys, clicks, impressions, position in self.search_analytics.get(dims, [])
+            if start <= keys[0] <= end
+        ]
+        # Honour pagination exactly as the API does, so the client's loop is
+        # genuinely exercised rather than assumed.
+        offset = body.get("startRow", 0)
+        limit = body.get("rowLimit", SEARCH_ANALYTICS_ROW_LIMIT)
+        return httpx.Response(200, json={"rows": rows[offset : offset + limit]})
 
     def _token(self, request: httpx.Request) -> httpx.Response:
         form = dict(_form(request))
@@ -163,3 +201,9 @@ def ga4_account(name: str, properties: list[tuple[str, str]]) -> dict[str, Any]:
             for prop, label in properties
         ],
     }
+
+
+def analytics_row(
+    keys: tuple[str, ...], clicks: int, impressions: int, position: float
+) -> tuple:
+    return (keys, clicks, impressions, position)

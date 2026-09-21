@@ -173,7 +173,7 @@ create table website_connections (
 -- One ACTIVE link per (website, service), while still allowing a history of
 -- unlinked or errored rows. A plain unique on (website_id, service, status) would
 -- also forbid a second 'unlinked' row, which is not the intent.
-create unique index site_connections_one_active
+create unique index website_connections_one_active
     on website_connections (website_id, service) where status = 'active';
 create index on website_connections (website_id);
 
@@ -201,7 +201,7 @@ create table sync_runs (
     id              uuid primary key default gen_random_uuid(),
     organization_id          uuid not null references organizations(id) on delete cascade,
     website_id         uuid references websites(id) on delete cascade,
-    site_connection_id uuid references website_connections(id) on delete cascade,
+    website_connection_id uuid references website_connections(id) on delete cascade,
     provider_key    text not null,
     service         text not null,
     kind            text not null check (kind in ('backfill','incremental','discovery')),

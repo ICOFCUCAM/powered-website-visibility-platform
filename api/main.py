@@ -22,7 +22,8 @@ from api.hub import deps as hub_deps
 from api.hub.routes import connections as hub_connections
 from api.hub.routes import oauth as hub_oauth
 from api.hub.routes import properties as hub_properties
-from api.routers import auth, health, websites
+from api.hub.routes import sync as hub_sync
+from api.routers import auth, health, performance, websites
 
 logger = logging.getLogger("visibility_hub")
 
@@ -72,11 +73,13 @@ def create_app() -> FastAPI:
         health.router,
         auth.router,
         websites.router,
+        performance.router,
         # The Hub mounts its own routers. The core never imports them for
         # anything but composition, and the Hub imports none of the core's.
         hub_oauth.router,
         hub_connections.router,
         hub_properties.router,
+        hub_sync.router,
     ):
         app.include_router(router, prefix="/api/v1")
 
