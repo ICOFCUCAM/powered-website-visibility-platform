@@ -9,11 +9,12 @@ Discover → Diagnose → Recommend → Fix → Measure → Repeat
 
 ## Status
 
-**M7 + the onboarding wizard.** The database, the API, the Google connection
+**M8 + the onboarding wizard.** The database, the API, the Google connection
 layer (OAuth with PKCE, encrypted token vault, property discovery,
 auto-matching, linking, ownership), Search Console and GA4 synchronisation,
 the crawler, the rules engine and scoring, the dashboard and audit
-screens, and the wizard a customer actually walks through:
+screens, the weekly plan and its email, and the wizard a customer actually
+walks through:
 
 ```
 1. Your website        example.com
@@ -25,7 +26,29 @@ screens, and the wizard a customer actually walks through:
 6. Website scan        16 months of search history + 14 of analytics
 ```
 
-The weekly report and AI strategist (M8–M9) do not exist yet.
+and the weekly report it produces:
+
+```
+example.com: 1,456 clicks, 4 things to fix
+
+Clicks rose by 224 to 1,456 for the period.
+Visibility score 52/100 · position 12.4, 5.6% better than the previous 28 days
+
+1. Write search descriptions for 5 pages     about 252 more clicks a month
+2. Refresh the page losing traffic           /sourdough
+3. Push the search just below page one onto it
+4. Serve 6 pages' text without JavaScript
+```
+
+The AI strategist (M9) does not exist yet.
+
+The AI layer runs **with or without a model**. Selection and ranking are code,
+so the four priorities in a plan are the same either way; a model writes the
+prose when one is configured, and a validator refuses any generation
+containing a figure the customer's own data does not support. With no
+`ANTHROPIC_API_KEY` set, every explanation and plan comes from hand-written
+templates drawn from the issue catalogue and the rule thresholds — plain,
+correct, and made of the same numbers.
 
 The live Google handshake is the one thing untested here, because it needs a
 verified Cloud project and a real user's consent. Everything up to it runs
@@ -49,7 +72,9 @@ cd web && npm run dev                          # UI on :3000
 | `api/hub/` | The Google Hub: the only module that may reach Google. Its own routes, services, providers and domain events. |
 | `api/crawler/` | Politeness, frontier, fetch, extraction, render escalation. |
 | `api/analysis/` | 27 deterministic rules, the CTR baseline, versioned scoring. |
-| `web/` | Next.js: onboarding wizard, dashboard, audit, sign-in. |
+| `api/ai/` | The only module that may reach a model. Versioned prompts, the evidence cache, budget admission, the numbers validator, the weekly plan. |
+| `api/reports/` | Weekly report assembly, the HTML and text email, signed links, delivery. |
+| `web/` | Next.js: onboarding wizard, dashboard, audit, this week's plan, sign-in. |
 | `db/` | Migrations, roles, schema tests. |
 
 The technical specification in [`docs/`](docs/) remains the source of truth.

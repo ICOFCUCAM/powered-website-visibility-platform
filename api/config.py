@@ -50,6 +50,10 @@ class Settings:
     environment: str
     pool_min_size: int
     pool_max_size: int
+    #: Where the customer-facing app lives. Used to build the links in the
+    #: weekly email, which is the one place the API has to know its own
+    #: front end's address.
+    web_base_url: str
 
     @property
     def is_production(self) -> bool:
@@ -87,4 +91,5 @@ def get_settings() -> Settings:
         environment=os.environ.get("ENVIRONMENT", "development"),
         pool_min_size=int(os.environ.get("DB_POOL_MIN", "1")),
         pool_max_size=int(os.environ.get("DB_POOL_MAX", "10")),
+        web_base_url=os.environ.get("WEB_BASE_URL", "http://localhost:3000"),
     )

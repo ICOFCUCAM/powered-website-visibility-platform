@@ -122,6 +122,17 @@ async def test_every_tenant_table_carries_an_organisation_column(client):
         "users", "organizations", "organization_members", "organization_branding",
         # Internal queues and logs, service-role only.
         "crawl_frontier",
+        # A global generation cache, and the one entry here that is a genuine
+        # decision rather than a category. Its key is a hash of the COMPLETE
+        # prompt payload, so two organisations collide only when the text each
+        # would have been shown is byte-identical — which means a shared row
+        # cannot carry one tenant's data to another. The payload is built from
+        # an allowlist per issue type (api/ai/prompts/issue_explanation.py) and
+        # contains no URL, title or search term; test_ai_explanations.py
+        # asserts that directly. Adding organization_id here would not make it
+        # safer, only more expensive: every site would pay for its own copy of
+        # the same sentence.
+        "issue_explanations",
     }
 
     async with db.session() as conn:

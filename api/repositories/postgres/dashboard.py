@@ -85,6 +85,19 @@ OPPORTUNITY_PHRASES: dict[str, tuple[str, str]] = {
 }
 
 
+def pct_change(now: Any, before: Any) -> float | None:
+    """Movement as a percentage, or None when there is nothing to compare to.
+
+    Lives here rather than in the handler because the weekly email quotes the
+    same figures as the screen, and "the email disagrees with the dashboard"
+    is the kind of bug a customer reports once and never trusts you about
+    again. One definition, two readers.
+    """
+    if now is None or not before:
+        return None
+    return round((float(now) - float(before)) / float(before) * 100, 1)
+
+
 @dataclass(frozen=True, slots=True)
 class Opportunity:
     type_key: str
@@ -230,6 +243,34 @@ class DashboardRepository:
              limit %s
             """,
             (website_id, limit),
+        )
+
+    async def changes_since(
+        self, website_id: UUID, since: date, limit: int = 20
+    ) -> list[dict[str, Any]]:
+        """The same strip as `recent_changes`, bounded by a date.
+
+        The weekly email reports the week, not the last ten things that
+        happened — on a quiet site those are months old, and presenting them
+        as this week's progress would be a lie told by a date filter's
+        absence.
+        """
+        return await fetch_all(
+            self._conn,
+            """
+            select o.observed_at, o.present, i.type_key, i.status,
+                   t.title, p.url
+              from issue_observations o
+              join issues i on i.id = o.issue_id
+              join issue_types t on t.key = i.type_key
+              left join pages p on p.id = i.page_id
+             where o.website_id = %s
+               and o.observed_at >= %s
+               and (o.present = false or i.status in ('regressed','verified'))
+             order by o.observed_at desc
+             limit %s
+            """,
+            (website_id, since, limit),
         )
 
     async def last_crawl(self, website_id: UUID) -> dict[str, Any] | None:

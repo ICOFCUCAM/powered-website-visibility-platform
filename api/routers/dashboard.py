@@ -15,7 +15,11 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 
 from api.deps import ConnectionDep, WebsiteScopeDep
-from api.repositories.postgres.dashboard import DashboardRepository, phrase_for
+from api.repositories.postgres.dashboard import (
+    DashboardRepository,
+    pct_change,
+    phrase_for,
+)
 from api.repositories.postgres.performance import (
     AnalyticsRepository,
     PerformanceRepository,
@@ -133,12 +137,12 @@ async def dashboard(scope: WebsiteScopeDep, conn: ConnectionDep) -> DashboardOut
             ctr=totals.ctr,
             position=totals.position,
             change={
-                "clicks": _pct(totals.clicks, before.clicks),
-                "impressions": _pct(totals.impressions, before.impressions),
+                "clicks": pct_change(totals.clicks, before.clicks),
+                "impressions": pct_change(totals.impressions, before.impressions),
                 # Inverted once here: position improving means the number
                 # going down, and every chart downstream would otherwise have
                 # to remember that.
-                "position": _pct(before.position, totals.position),
+                "position": pct_change(before.position, totals.position),
             } if before.impressions else None,
             # Zero unless query data actually exists for the window: with
             # none synced, the whole total would otherwise be reported as
@@ -229,12 +233,9 @@ async def _score(repo: DashboardRepository, website_id, end: date) -> ScoreOut |
         return None
 
     previous = await repo.score_before(website_id, latest["as_of"] - timedelta(days=28))
-    change = None
-    if previous and float(previous["total"]):
-        change = round(
-            (float(latest["total"]) - float(previous["total"]))
-            / float(previous["total"]) * 100, 1
-        )
+    change = pct_change(
+        latest["total"], previous["total"] if previous else None
+    )
 
     return ScoreOut(
         total=float(latest["total"]),
@@ -297,12 +298,6 @@ def _is_stale(crawl) -> bool:
     if finished is None:
         return True
     return (datetime.now(finished.tzinfo) - finished) > timedelta(days=10)
-
-
-def _pct(now, before) -> float | None:
-    if now is None or not before:
-        return None
-    return round((float(now) - float(before)) / float(before) * 100, 1)
 
 
 def _f(value) -> float | None:

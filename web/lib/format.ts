@@ -32,6 +32,20 @@ export function delta(value: number | null): { label: string; direction: Directi
   };
 }
 
+/**
+ * One date format for the whole product, and it is the one the copy is
+ * written in. `toLocaleDateString()` with no locale follows the *browser*,
+ * so the same screen reads "9/21/2026" for one customer and "21/09/2026" for
+ * another — and the email, rendered server-side, always disagreed with both.
+ */
+export function day(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+}
+
 export function greeting(now = new Date()): string {
   const hour = now.getHours();
   if (hour < 12) return "Good morning";

@@ -8,6 +8,7 @@ import {
   COMPONENT_LABELS,
   count,
   counted,
+  day,
   delta,
   greeting,
   percent,
@@ -36,7 +37,7 @@ function Score({ score }: { score: Dashboard["score"] }) {
           <span className="score__delta flat">first measurement</span>
         ) : (
           <span className={`score__delta ${direction}`}>
-            {label} since {new Date(score.compared_to!).toLocaleDateString()}
+            {label} since {day(score.compared_to!)}
           </span>
         )}
       </div>
@@ -173,9 +174,17 @@ export default function DashboardPage() {
                 Potential: about {count(top.estimated_clicks)} more clicks a month
               </p>
             ) : null}
-            <div style={{ marginTop: 14 }}>
+            <div style={{ marginTop: 14, display: "flex", gap: 10 }}>
+              {/* The plan comes first: it is four things in the order they
+                  are worth doing. The audit is everything, which is the
+                  right answer to a different question. */}
+              <Link href="/plan">
+                <button type="button">This week&apos;s plan</button>
+              </Link>
               <Link href="/audit">
-                <button type="button">View opportunities</button>
+                <button type="button" className="btn-secondary">
+                  View opportunities
+                </button>
               </Link>
             </div>
           </div>
@@ -276,7 +285,7 @@ export default function DashboardPage() {
         Website scanned {when(freshness.last_crawl_at)}
         {freshness.pages_crawled ? ` · ${freshness.pages_crawled} pages` : ""}
         {freshness.search_data_through
-          ? ` · Google data through ${new Date(freshness.search_data_through).toLocaleDateString()}`
+          ? ` · Google data through ${day(freshness.search_data_through)}`
           : ""}
       </p>
     </main>

@@ -33,7 +33,7 @@ billing and connection-deletion require `admin`.
 user as-is, so it is written for a non-technical reader. Codes that matter:
 `google_needs_reauth`, `google_no_property_match`, `google_insufficient_permission`,
 `plan_limit_exceeded`, `crawl_in_progress`, `ai_budget_exhausted`,
-`site_not_verified`.
+`site_not_verified`, `email_not_configured`, `invalid_status`.
 
 ## Endpoints
 
@@ -117,18 +117,42 @@ POST /websites/{id}/audit/{issue_id}/resolve
 ### AI
 ```
 POST /websites/{id}/ai/chat                      (SSE)
+GET  /websites/{id}/plan                         this week's plan + priorities
 GET  /websites/{id}/recommendations              ?status=
 POST /websites/{id}/recommendations/{rid}/dismiss
 POST /websites/{id}/recommendations/{rid}/complete
 ```
 
+`complete` records INTENT, not evidence. It sets the recommendation to
+`RESOLVED` and leaves the issue behind it open until a crawl observes it gone —
+which is what lets next week's plan say "you marked this done and it is still
+there". `?status=` rejects a value outside the four statuses rather than
+returning an empty list, because an empty list reads as "you have none".
+
+Each recommendation carries `prose_source` (`template` or `model`) so the UI
+can label generated wording as generated. The rank beside it is always code.
+
 ### Reports and account
 ```
 GET    /websites/{id}/reports
+POST   /websites/{id}/reports          generate this week's report now
 POST   /websites/{id}/reports/{rid}/send
 GET    /reports/{rid}/html            signed, expiring URL
 DELETE /account                       deletes the account and its data
 ```
+
+`/reports/{rid}/html` is the one route with no session, because it is opened
+from a mail client where there is neither a session nor an Authorization
+header. It takes `expires` and `signature` — an HMAC over the report id and
+the expiry, under a context string of its own so a signature minted for it can
+never be replayed against another signing use of the same secret. A bad
+signature, an expired one and a report that does not exist all return the same
+`not_found`; a distinct 404 would confirm which report ids are real.
+
+`send` returns `email_not_configured` when no mail server is set up rather
+than recording a delivery that did not happen. A failed delivery sets the
+report to `failed` with its reason, so a report that did not arrive looks
+different from one that did.
 
 ### Internal
 Service-token auth, separate router, never publicly routed:

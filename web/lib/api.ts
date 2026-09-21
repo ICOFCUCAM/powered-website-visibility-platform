@@ -12,6 +12,18 @@
 export const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api/v1";
 
+/**
+ * Turns an API-relative path into one a browser can navigate to.
+ *
+ * The signed report link is handed back as a path including the version
+ * prefix, and API_BASE already ends in that prefix — so resolving one against
+ * the other naively produces /api/v1/api/v1/... The origin is the only part
+ * of API_BASE that is safe to reuse here.
+ */
+export function apiUrl(path: string): string {
+  return `${new URL(API_BASE, "http://localhost").origin}${path}`;
+}
+
 export class ApiError extends Error {
   constructor(
     readonly code: string,
@@ -213,6 +225,48 @@ export interface Audit {
   search_data_available: boolean;
 }
 
+export interface Recommendation {
+  id: string;
+  rank: number;
+  kind: string;
+  title: string;
+  body_md: string | null;
+  how_to_md: string | null;
+  estimated_clicks_delta: number | null;
+  effort: string;
+  confidence: number;
+  status: "OPEN" | "IN_PROGRESS" | "RESOLVED" | "DISMISSED";
+  pages_affected: number;
+  /** Pages or search phrases — a keyword finding names a search, not a URL. */
+  examples: string[];
+  /**
+   * Who wrote the words. The ranking beside them is always code, and the UI
+   * says so rather than letting a reader assume either way.
+   */
+  prose_source: "template" | "model";
+}
+
+export interface Plan {
+  id: string | null;
+  week_start: string | null;
+  summary_md: string | null;
+  generated_at: string | null;
+  fallback_reason: string | null;
+  recommendations: Recommendation[];
+}
+
+export interface Report {
+  id: string;
+  period_start: string;
+  period_end: string;
+  subject: string | null;
+  status: "draft" | "sent" | "failed";
+  generated_at: string;
+  sent_at: string | null;
+  recipients: string[];
+  html_url: string;
+}
+
 export const api = {
   me: (token: string) => request<Me>("/auth/me", token),
   listWebsites: (token: string) => request<Website[]>("/websites", token),
@@ -299,6 +353,31 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ goals }),
     }),
+
+  plan: (token: string, websiteId: string) =>
+    request<Plan>(`/websites/${websiteId}/plan`, token),
+
+  setRecommendationStatus: (
+    token: string,
+    websiteId: string,
+    recommendationId: string,
+    action: "complete" | "dismiss",
+  ) =>
+    request<{ id: string; status: string }>(
+      `/websites/${websiteId}/recommendations/${recommendationId}/${action}`,
+      token,
+      { method: "POST" },
+    ),
+
+  reports: (token: string, websiteId: string) =>
+    request<{ reports: Report[] }>(`/websites/${websiteId}/reports`, token),
+
+  generateReport: (token: string, websiteId: string) =>
+    request<{ id: string; week_start: string; subject: string; html_url: string }>(
+      `/websites/${websiteId}/reports`,
+      token,
+      { method: "POST" },
+    ),
 
   syncAnalytics: (token: string, websiteId: string) =>
     request<{ status: string; goals_synced: number }>(

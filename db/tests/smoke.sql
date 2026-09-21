@@ -572,3 +572,108 @@ begin
 end $$;
 reset role;
 reset app.user_id;
+
+
+-- ---------------------------------------------------------------------------
+-- 18. AI output is accountable or it is not stored. A generation that cannot
+--     say which provider produced it and which rows it was grounded in is a
+--     sentence with no origin, and the database refuses it rather than letting
+--     the claim sit there looking true.
+-- ---------------------------------------------------------------------------
+reset role;
+do $$
+begin
+    begin
+        insert into llm_calls (organization_id, purpose, model, status,
+                               derived_from)
+        values ('11111111-1111-1111-1111-111111111111','weekly_plan','some-model',
+                'ok', '{}'::jsonb);
+        raise exception 'AI FAIL: an ungrounded generation was accepted';
+    exception when check_violation then
+        raise notice 'PASS  a generation with no provider or evidence is refused';
+    end;
+
+    -- A refusal is a record of a call that produced nothing usable, so it is
+    -- exempt: there is no output to be accountable for.
+    insert into llm_calls (organization_id, purpose, model, status, derived_from)
+    values ('11111111-1111-1111-1111-111111111111','weekly_plan','some-model',
+            'refused', '{}'::jsonb);
+    raise notice 'PASS  a refusal is recorded without a grounding claim';
+end $$;
+
+
+-- ---------------------------------------------------------------------------
+-- 19. The explanation cache is global ON PURPOSE, and its reachability is a
+--     property worth asserting rather than assuming: the request path must be
+--     able to read it (or the audit screen silently shows templates forever),
+--     and it must carry no tenant column to scope it by.
+-- ---------------------------------------------------------------------------
+do $$
+declare has_org boolean; rls boolean;
+begin
+    select exists(select 1 from information_schema.columns
+                   where table_name = 'issue_explanations'
+                     and column_name = 'organization_id'),
+           (select relrowsecurity from pg_class where relname = 'issue_explanations')
+      into has_org, rls;
+
+    if has_org then
+        raise exception 'CACHE FAIL: issue_explanations gained a tenant column; '
+                        'either scope it properly or keep it global';
+    end if;
+    if rls then
+        raise exception 'CACHE FAIL: row-level security on a table with no '
+                        'policy reads as empty, not as an error';
+    end if;
+    raise notice 'PASS  the explanation cache is global and readable';
+end $$;
+
+set role app_user;
+set app.user_id = 'aaaaaaaa-0000-0000-0000-000000000001';
+do $$
+declare n int;
+begin
+    select count(*) into n from issue_explanations;
+    raise notice 'PASS  the request-path role can read the explanation cache (% rows)', n;
+end $$;
+reset role;
+reset app.user_id;
+
+
+-- ---------------------------------------------------------------------------
+-- 20. A plan and its recommendations say whose words they are. A customer
+--     reading templated advice while believing a model wrote it, or the
+--     reverse, is a difference the row has to record.
+-- ---------------------------------------------------------------------------
+do $$
+declare plan_id uuid;
+begin
+    insert into plans (organization_id, website_id, week_start, scoring_version,
+                       prompt_version, model)
+    values ('11111111-1111-1111-1111-111111111111',
+            '5117e000-0000-0000-0000-00000000000a','2026-09-21','1.0.0',
+            'weekly_plan.v1','template')
+    on conflict (website_id, week_start) do update set model = excluded.model
+    returning id into plan_id;
+
+    begin
+        update plans set fallback_reason = 'because' where id = plan_id;
+        raise exception 'PLAN FAIL: an unrecognised fallback reason was accepted';
+    exception when check_violation then
+        raise notice 'PASS  a plan cannot claim an unrecognised fallback reason';
+    end;
+
+    begin
+        insert into recommendations (organization_id, website_id, plan_id, kind,
+                                     rank, title, impact_score, effort,
+                                     confidence, prose_source)
+        values ('11111111-1111-1111-1111-111111111111',
+                '5117e000-0000-0000-0000-00000000000a', plan_id, 'fix_issue',
+                1, 'Write titles', 10, 'low', 0.9, 'a-human');
+        raise exception 'PLAN FAIL: an unrecognised prose source was accepted';
+    exception when check_violation then
+        raise notice 'PASS  recommendation prose names a source we recognise';
+    end;
+
+    delete from plans where id = plan_id;
+end $$;

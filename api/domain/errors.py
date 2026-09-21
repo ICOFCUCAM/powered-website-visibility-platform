@@ -113,3 +113,24 @@ class WebsiteUnreachable(AppError):
     status = 422
     message = "We couldn't reach this website. Check that it is publicly accessible."
     retriable = False
+
+
+class AiBudgetExhausted(AppError):
+    code = "ai_budget_exhausted"
+    status = 402
+    message = "You've used this month's AI allowance. Your figures are unaffected."
+    retriable = False
+
+
+class EmailNotConfigured(AppError):
+    """Deliberately not a silent success.
+
+    Marking a report 'sent' when no mail server is configured would leave a
+    customer waiting for an email that was never going to arrive, and the
+    record would say it had been.
+    """
+
+    code = "email_not_configured"
+    status = 503
+    message = "Email delivery isn't set up yet, so we couldn't send this report."
+    retriable = False

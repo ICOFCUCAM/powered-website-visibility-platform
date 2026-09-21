@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { counted, delta, greeting, percent, plural, position, when } from "@/lib/format";
+import { counted, day, delta, greeting, percent, plural, position, when } from "@/lib/format";
 
 describe("formatting", () => {
   it("never implies precision Search Console does not have", () => {
@@ -49,5 +49,13 @@ describe("formatting", () => {
     expect(greeting(new Date(2026, 0, 1, 9))).toBe("Good morning");
     expect(greeting(new Date(2026, 0, 1, 14))).toBe("Good afternoon");
     expect(greeting(new Date(2026, 0, 1, 21))).toBe("Good evening");
+  });
+});
+
+describe("day", () => {
+  it("is British, not the browser's guess", () => {
+    // toLocaleDateString() with no locale follows the browser, so the same
+    // screen reads 9/21/2026 for one customer and 21/09/2026 for another.
+    expect(day("2026-09-21")).toBe("21 September 2026");
   });
 });

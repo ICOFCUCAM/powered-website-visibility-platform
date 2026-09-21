@@ -16,6 +16,7 @@ dependencies = [
     "httpx>=0.27",
     "cryptography>=43",
     "redis>=5.0",
+    "anthropic>=1.7",
 ]
 
 [project.optional-dependencies]
@@ -97,6 +98,34 @@ source_modules = [
     "api.routers", "api.repositories", "api.domain", "api.adapters", "api.deps",
 ]
 forbidden_modules = ["api.hub"]
+
+# The same shape as the Google rule, for the same reason: a boundary nobody
+# can cross by accident is worth more than a convention everybody agrees with.
+[[tool.importlinter.contracts]]
+name = "Only the AI layer may call a language model"
+type = "forbidden"
+source_modules = [
+    "api.domain", "api.routers", "api.repositories", "api.adapters",
+    "api.analysis", "api.crawler", "api.hub", "api.reports", "api.deps",
+    "api.main",
+]
+forbidden_modules = ["anthropic"]
+# Direct imports only. Reaching the SDK *through* api.ai is the design — the
+# report runner asks the AI layer for a plan and gets structured data back.
+# What this forbids is any other module constructing a client, choosing a
+# model or shaping a request, which is the thing that would make the model
+# unswappable and the layer untestable.
+allow_indirect_imports = true
+
+# Detection is deterministic and must stay that way. A rule that called a model
+# would make "this is fixed" an opinion, break the fingerprint lifecycle, and
+# put a per-page API call inside a 500-page crawl. The AI layer reads the
+# analysis layer; it is never the other way round.
+[[tool.importlinter.contracts]]
+name = "Detection is deterministic: analysis and the crawler never call the AI layer"
+type = "forbidden"
+source_modules = ["api.analysis", "api.crawler"]
+forbidden_modules = ["api.ai", "api.reports"]
 
 [[tool.importlinter.contracts]]
 name = "Domain does not depend on delivery or persistence"

@@ -215,3 +215,20 @@ button:disabled { opacity: .55; cursor: not-allowed; }
                margin-top: 8px; word-break: break-all; }
 .issue__actions { margin-top: 12px; display: flex; gap: 10px; align-items: center; }
 .issue--applied { opacity: .6; }
+
+/* --- This week's plan ----------------------------------------------------- */
+.plan__title { font-size: 22px; margin: 0 0 4px; }
+.plan__sub { font-size: 13px; color: var(--muted); margin: 0 0 22px; }
+.plan__summary { font-size: 15px; line-height: 1.6; color: var(--ink);
+                 margin: 0 0 28px; max-width: 62ch; }
+.issues { list-style: none; padding: 0; margin: 0; }
+.issues .issue { margin-bottom: 14px; }
+.steps { margin: 10px 0 0; padding-left: 20px; font-size: 14px;
+         line-height: 1.55; }
+.steps li { padding-bottom: 4px; }
+.paths { display: grid; gap: 2px; margin: 12px 0 0; }
+/* Not .issue__meta: the impact line is a sentence about money, and setting it
+   in the same monospace as the URL list made it read as another file path. */
+.priority__impact { font-size: 13px; color: var(--muted); margin: 12px 0 0; }
+.priority__gain { color: var(--ok, #1a7f37); }
+.chip--rank { font-variant-numeric: tabular-nums; flex: none; }
