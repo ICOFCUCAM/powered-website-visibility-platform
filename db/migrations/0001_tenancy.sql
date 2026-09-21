@@ -14,7 +14,7 @@ create table organizations (
     plan        text        not null default 'free'
                             check (plan in ('free','pro','agency','enterprise')),
     -- Hard caps enforced at job-admission time, not at render time.
-    max_sites            int     not null default 1,
+    max_websites            int     not null default 1,
     max_pages_per_crawl  int     not null default 100,
     monthly_ai_budget_usd numeric(10,2) not null default 2.00,
     created_at  timestamptz not null default now()

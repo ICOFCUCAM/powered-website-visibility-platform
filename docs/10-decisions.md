@@ -29,6 +29,41 @@ migration attached, not a preference.
 | 16 | AI visibility as a *mention rate* over N runs, never a boolean | LLM answers are non-deterministic; a boolean flickers | Low |
 | 17 | Strategist uses typed read-only tools, never model-written SQL | One injection away from a cross-tenant leak otherwise | Medium |
 | 18 | No number without a defensible source; a component with no source is absent, not zero | The credibility of every other number depends on it | None |
+| 19 | Deterministic values are reproducible; model output records accountability instead | An LLM is not a function, and a schema claiming otherwise sends someone hunting a bug that does not exist | Low |
+| 20 | **`crawl_allowed` is derived, never user-controlled, and enforced immediately before crawl dispatch** (M1) | See below | Low |
+
+### On decision 20
+
+```
+crawl_allowed = ownership_verified
+                AND ownership coverage matches the crawl target
+                AND website status is active
+```
+
+**No database trigger.** A trigger cannot see facts that live outside Postgres
+— plan state, robots.txt, an operator suspension — so it would be either
+incomplete or would reach further than a trigger should.
+
+Enforced at the service boundary instead:
+
+```
+request crawl → load website → evaluate crawl_allowed()
+              → false: reject, no job created
+              → true:  enqueue
+```
+
+**And the crawler independently re-checks before fetching.** Defence in depth:
+the gate that admits the job and the gate that starts the work are separate, so
+a queue entry cannot crawl a website whose verification was revoked after it
+was enqueued.
+
+The column is kept for observability, and clients cannot write it — not by
+convention but by grant (migration `0012`), which matters because under
+Supabase a client role reaches Postgres directly. Worth recording the mechanism:
+a column-level `REVOKE` does **not** subtract from a table-level `GRANT UPDATE`,
+so the protection is a table-level revoke followed by a column-by-column
+re-grant of everything else. The first implementation used the obvious spelling
+and the test caught it.
 
 ### On decision 13, concretely
 

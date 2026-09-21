@@ -42,6 +42,23 @@ describes.
 **If a feature does not improve *Understand*, it waits.** The product is V1;
 the architecture deliberately contains seams for V2 and V3.
 
+## Handoff status
+
+```
+ARCHITECTURE          FROZEN
+DATABASE              VERIFIED
+CONSTRAINTS           CI-ENFORCED
+V1 SCOPE              FROZEN
+V2/V3 SEAMS           DEFINED
+GOOGLE VERIFICATION   TIME-SENSITIVE  → submit now, build against test users
+GBP APPLICATION       TIME-SENSITIVE if Phase 3 depends on it
+BACKLINK VENDOR       COMMERCIAL      → out of V1 entirely
+crawl_allowed         DECIDED (M1)    → derived, never user-controlled,
+                                        enforced before dispatch
+```
+
+No further architecture work unless implementation exposes a contradiction.
+
 ## Architectural source of truth
 
 Four documents are frozen. Changing one is an architectural decision, recorded
@@ -75,6 +92,9 @@ PASS  a modelled estimate cannot be declared deterministic
 PASS  a generation without provider or grounding evidence is rejected
 PASS  model output records provider, version, prompt and its grounding evidence
 PASS  provenance index separates reproducible from model-dependent rows
+PASS  a client role cannot write crawl_allowed
+PASS  a client role cannot raise its own plan limits
+PASS  ordinary columns on the same table stay writable
 ```
 
 Each test exercises a claim the design depends on rather than the ORM's ability

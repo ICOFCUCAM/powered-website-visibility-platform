@@ -53,7 +53,7 @@ POST   /websites                 {url} → normalise, validate, dedupe, create
 GET    /websites
 GET    /websites/{id}
 DELETE /websites/{id}
-POST   /websites/{id}/crawl      409 if a crawl is already running
+POST   /websites/{id}/crawl      409 if running; 403 unless crawl_allowed()
 POST   /websites/{id}/verify     ownership check (GSC linkage, or DNS/file token)
 ```
 

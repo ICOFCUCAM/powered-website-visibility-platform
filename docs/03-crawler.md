@@ -32,6 +32,23 @@ schedule/onboarding
                         analyse → issues → score → plan
 ```
 
+## Admission, then re-check
+
+A crawl passes two independent gates.
+
+**At admission**, the API evaluates `crawl_allowed()` — ownership verified, the
+verifying property actually covering the target, website active, plan permits,
+not paused. False means no job is created at all.
+
+**Before fetching**, the crawl worker evaluates the same prerequisites again.
+This is not belt-and-braces theatre: verification can be revoked, a plan can
+lapse and a website can be suspended in the minutes or hours between enqueue
+and dispatch, and a queue entry must never outlive the permission that created
+it.
+
+`crawl_allowed` is a derived column kept for observability. It is never
+client-writable and never the authority — the check is.
+
 ## Seeding
 
 1. `GET /robots.txt` — parse rules and `Sitemap:` directives; store the raw file.

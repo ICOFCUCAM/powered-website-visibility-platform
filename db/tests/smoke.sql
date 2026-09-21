@@ -13,6 +13,9 @@ end $$;
 grant usage on schema public, app to app_user;
 grant select, insert, update, delete on all tables in schema public to app_user;
 grant execute on all functions in schema app to app_user;
+-- A table-level GRANT re-grants every column, so the derived-column revokes
+-- must be re-applied after it — exactly as a real deployment must.
+select app.lock_derived_columns();
 
 -- Fixtures: two organizations that must never see each other.
 insert into organizations (id, name, slug) values
@@ -519,3 +522,37 @@ begin
     raise notice 'PASS  provenance index separates % reproducible from % model-dependent row(s)',
                  repro, not_repro;
 end $$;
+
+
+-- ---------------------------------------------------------------------------
+-- 17. A client cannot grant itself the right to crawl. crawl_allowed is
+--     derived and unwritable by client roles, so "the API never sets this"
+--     does not depend on every handler remembering.
+-- ---------------------------------------------------------------------------
+set role app_user;
+set app.user_id = 'aaaaaaaa-0000-0000-0000-000000000001';
+do $$
+begin
+    begin
+        update websites set crawl_allowed = true
+         where id = '5117e000-0000-0000-0000-00000000000a';
+        raise exception 'DERIVED FAIL: a client role set crawl_allowed';
+    exception when insufficient_privilege then
+        raise notice 'PASS  a client role cannot write crawl_allowed';
+    end;
+
+    begin
+        update organizations set max_pages_per_crawl = 1000000
+         where id = '11111111-1111-1111-1111-111111111111';
+        raise exception 'DERIVED FAIL: a client role raised its own page cap';
+    exception when insufficient_privilege then
+        raise notice 'PASS  a client role cannot raise its own plan limits';
+    end;
+
+    -- but ordinary fields on the same rows remain writable
+    update websites set name = 'Example Church'
+     where id = '5117e000-0000-0000-0000-00000000000a';
+    raise notice 'PASS  ordinary columns on the same table stay writable';
+end $$;
+reset role;
+reset app.user_id;
