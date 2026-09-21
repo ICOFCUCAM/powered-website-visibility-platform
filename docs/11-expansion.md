@@ -8,6 +8,16 @@ The rule applied throughout: a seam earns its place only if adding the feature
 later would otherwise mean rewriting something that already works. Everything
 else was left out.
 
+These seams exist to serve a boundary, not to invite scope creep:
+
+| | | |
+| --- | --- | --- |
+| **V1** | Understand | connect → collect → crawl → diagnose → score → recommend → report |
+| **V2** | Act | approve → execute → preserve before-state → verify → measure |
+| **V3** | Expand | more surfaces, more providers, local / search / AI intelligence |
+
+> If a feature does not improve *Understand*, it waits.
+
 ## The five seams
 
 ```

@@ -31,6 +31,17 @@ describes.
 | [11-expansion.md](docs/11-expansion.md) | Seams for everything deliberately not in V1 |
 | [12-v1-conformance.md](docs/12-v1-conformance.md) | **Frozen.** Section-by-section against the V1 spec |
 
+## V1 → V2 → V3
+
+| | | |
+| --- | --- | --- |
+| **V1** | Understand | connect → collect → crawl → diagnose → score → recommend → report |
+| **V2** | Act | approve → execute → preserve before-state → verify → measure |
+| **V3** | Expand | more visibility surfaces, external providers, local and AI intelligence |
+
+**If a feature does not improve *Understand*, it waits.** The product is V1;
+the architecture deliberately contains seams for V2 and V3.
+
 ## Architectural source of truth
 
 Four documents are frozen. Changing one is an architectural decision, recorded
@@ -60,6 +71,10 @@ PASS  worker-b claimed all 3 without worker-a recovering
 PASS  property coverage correct across 11 cases (www, scheme, subdomain, suffix-spoof, path)
 PASS  ownership requires a COVERING property held as owner, not mere access
 PASS  reconciliation authority is stored, never derived from dimensional rows
+PASS  a modelled estimate cannot be declared deterministic
+PASS  a generation without provider or grounding evidence is rejected
+PASS  model output records provider, version, prompt and its grounding evidence
+PASS  provenance index separates reproducible from model-dependent rows
 ```
 
 Each test exercises a claim the design depends on rather than the ORM's ability
@@ -84,6 +99,9 @@ naive figure is the one that looks plausible in a dashboard.
    like any other row. The three tiers are specified in
    [01-data-model.md](docs/01-data-model.md).
 5. **Nothing ships a number it cannot defend.** Every derived value carries its
-   source, the records it came from, and the calculation version that produced
-   it. No fabricated search volumes, no modelled traffic presented as fact, no
-   metric with no source rendered as zero.
+   source, the records it came from, and whether it is reproducible.
+   Deterministic values (scores, rule findings, rankings) are reproducible from
+   the same inputs and `calculation_version`. Model output is not, and does not
+   pretend to be — it records provider, model version, prompt version, the
+   evidence it was grounded in, and when. No fabricated search volumes, no
+   modelled traffic presented as fact, no metric with no source shown as zero.

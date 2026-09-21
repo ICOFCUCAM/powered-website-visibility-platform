@@ -68,6 +68,49 @@ inspectable sub-metrics under a named `scoring_version`.
 A component with no data source is absent, not zero. Showing `Authority: 48`
 before backlink data is licensed would be an invented number.
 
+## The V1 → V2 → V3 boundary
+
+Three words, and a rule that settles most scope arguments before they start.
+
+### V1 — Understand
+
+```
+connect → collect → crawl → diagnose → score → recommend → report
+```
+
+### V2 — Act
+
+```
+approve → execute → preserve before-state → verify → measure
+```
+
+The new capability is the **action → verification loop**, not more dashboards:
+
+```
+issue → recommendation → user approves → action executed
+      → before_state preserved → crawl or Google observation
+      → did the condition actually improve?
+```
+
+That is worth considerably more than another report, and the substrate for it
+(`actions`, `action_capabilities`, the before-state constraint) is already in
+the V1 schema.
+
+### V3 — Expand
+
+Additional visibility surfaces, external data providers, and local / search /
+AI intelligence — the point at which this stops being a technical SEO audit and
+becomes a website visibility intelligence system.
+
+### The rule
+
+> **If a feature does not improve *Understand*, it waits.**
+
+The architecture does not prevent it from arriving later. That is the whole
+point of the seams in [11-expansion.md](11-expansion.md) — and the reason the
+answer to "is this V1 or already V2?" is: *the product is V1; the architecture
+deliberately contains seams for V2 and V3.*
+
 ## Version roadmap
 
 **MVP (v1)** — the launchable slice.

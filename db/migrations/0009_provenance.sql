@@ -15,9 +15,12 @@
 --   computed_at         when this value was calculated
 --   calculation_version which version of the rule/score/prompt produced it
 --
--- `calculation_version` is what makes a number reproducible: the same inputs
--- under the same version must yield the same output, and a version bump is the
--- only legitimate reason for a historical value to change.
+-- `calculation_version` is what makes a DETERMINISTIC number reproducible:
+-- the same inputs under the same version yield the same output, and a version
+-- bump is the only legitimate reason for such a value to change.
+--
+-- Model-dependent output is not reproducible and does not pretend to be. See
+-- migration 0011, which splits the two contracts.
 
 create type provenance_source as enum (
     'search_console',   -- Google-originated measurement

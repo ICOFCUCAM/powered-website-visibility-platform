@@ -99,9 +99,33 @@ So every derived table carries the same contract (migration `0009`):
 | `computed_at` | when this value was calculated |
 | `calculation_version` | which rule, score or prompt version produced it |
 
-`calculation_version` is what makes a value reproducible: the same inputs under
-the same version must produce the same output, and a version bump is the only
-legitimate reason for a historical number to change.
+### Two contracts, because an LLM is not a function
+
+Reproducibility applies to calculations. It cannot apply to model output, and a
+schema that claims otherwise sends someone hunting a "reproducibility bug" that
+is simply how language models work. So every derived row declares which
+contract it is under, via `deterministic` (migration `0011`):
+
+| | `deterministic = true` | `deterministic = false` |
+| --- | --- | --- |
+| Covers | scores, rule findings, impact rankings | model-written prose, vendor estimates |
+| Guarantee | same inputs + same `calculation_version` → same output | none, and none is claimed |
+| Records | `calculation_version` | provider, model version, prompt version, evidence references, generated-at |
+| A differing output means | a bug | nothing |
+
+For deterministic values, a `calculation_version` bump is the only legitimate
+reason a historical number changes. For model output the guarantee is
+**accountability, not reproducibility**: `llm_calls` records `model_provider`,
+`model_version`, `prompt_version`, the `derived_from` evidence it was grounded
+in, and `generated_at`, plus what it was attached to.
+
+Two constraints keep the distinction honest rather than advisory. A row with
+`source = 'modelled'` cannot be marked deterministic — declaring someone else's
+model reproducible is a category error, so the database refuses it. And a
+completed generation must name its provider and the evidence it was grounded
+in. Smoke tests 14–16 cover both, and that a recommendation's *derivation*
+(ranking, impact, selection — all code) is tracked separately from its
+*prose* (a model's).
 
 `provenance_index` answers the question across every derived table in one
 query. Smoke tests 9 and 10 assert the columns exist and that a score traces

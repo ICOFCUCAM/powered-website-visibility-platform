@@ -429,3 +429,93 @@ begin
     end if;
     raise notice 'PASS  reconciliation authority is stored, never derived from dimensional rows';
 end $$;
+
+-- ---------------------------------------------------------------------------
+-- 14. Determinism is declared, and a modelled estimate cannot claim it.
+--     "Same inputs, same version, same output" is true of a scoring function
+--     and false of anything that calls a model. Both contracts are recorded;
+--     neither is allowed to impersonate the other.
+-- ---------------------------------------------------------------------------
+insert into data_providers (key, label, capabilities, status)
+values ('example_vendor','Example vendor','{keyword_volume}','evaluating');
+
+do $$
+begin
+    begin
+        insert into external_metrics
+            (organization_id, website_id, subject_kind, subject_ref, metric,
+             value_numeric, provider_key, source, is_modelled, deterministic, as_of)
+        values ('11111111-1111-1111-1111-111111111111',
+                '5117e000-0000-0000-0000-00000000000a',
+                'keyword','church in london','search_volume',
+                2400,'example_vendor','modelled', true, true, current_date);
+        raise exception 'DETERMINISM FAIL: a modelled estimate was recorded as reproducible';
+    exception when check_violation then
+        raise notice 'PASS  a modelled estimate cannot be declared deterministic';
+    end;
+
+    insert into external_metrics
+        (organization_id, website_id, subject_kind, subject_ref, metric,
+         value_numeric, provider_key, source, is_modelled, deterministic, as_of)
+    values ('11111111-1111-1111-1111-111111111111',
+            '5117e000-0000-0000-0000-00000000000a',
+            'keyword','church in london','search_volume',
+            2400,'example_vendor','modelled', true, false, current_date);
+    raise notice 'PASS  the same estimate is accepted once declared non-reproducible';
+end $$;
+
+-- ---------------------------------------------------------------------------
+-- 15. Model output is accountable even though it is not reproducible: which
+--     provider, which model version, which prompt version, grounded in which
+--     evidence, generated when.
+-- ---------------------------------------------------------------------------
+do $$
+declare prov text; ev jsonb;
+begin
+    begin
+        insert into llm_calls (organization_id, website_id, purpose, model, status)
+        values ('11111111-1111-1111-1111-111111111111',
+                '5117e000-0000-0000-0000-00000000000a',
+                'weekly_plan','some-model','ok');
+        raise exception 'ACCOUNTABILITY FAIL: a generation with no provider or evidence was allowed';
+    exception when check_violation then
+        raise notice 'PASS  a generation without provider or grounding evidence is rejected';
+    end;
+
+    insert into llm_calls
+        (organization_id, website_id, purpose, model, model_provider, model_version,
+         prompt_version, derived_from, attached_to_table, attached_to_id, status)
+    values ('11111111-1111-1111-1111-111111111111',
+            '5117e000-0000-0000-0000-00000000000a',
+            'weekly_plan','some-model','anthropic','2026-05-01','weekly_plan.v1',
+            '{"issue_ids":["a1b2"],"gsc_window":"2026-08-24/2026-09-20"}',
+            'plans','p-1','ok');
+
+    select model_provider, derived_from into prov, ev
+      from llm_calls
+     where website_id = '5117e000-0000-0000-0000-00000000000a'
+       and purpose = 'weekly_plan' and status = 'ok';
+    if prov is null or ev->'issue_ids' is null then
+        raise exception 'ACCOUNTABILITY FAIL: provider=%, evidence=%', prov, ev;
+    end if;
+    raise notice 'PASS  model output records provider, version, prompt and its grounding evidence';
+end $$;
+
+-- ---------------------------------------------------------------------------
+-- 16. The provenance index says which contract each row is under, so "can this
+--     be reproduced?" is answered by the data, not by knowing the table.
+-- ---------------------------------------------------------------------------
+do $$
+declare repro int; not_repro int;
+begin
+    select count(*) filter (where deterministic),
+           count(*) filter (where not deterministic)
+      into repro, not_repro
+      from provenance_index
+     where website_id = '5117e000-0000-0000-0000-00000000000a';
+    if repro < 1 or not_repro < 1 then
+        raise exception 'INDEX FAIL: reproducible=%, non-reproducible=%', repro, not_repro;
+    end if;
+    raise notice 'PASS  provenance index separates % reproducible from % model-dependent row(s)',
+                 repro, not_repro;
+end $$;
