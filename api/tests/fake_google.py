@@ -67,6 +67,11 @@ class FakeGoogle:
     search_analytics_calls: list[dict[str, Any]] = field(default_factory=list)
     quota_exceeded_after: int | None = None
 
+    # GA4. Keyed by the dimension tuple, values are (dimension cells..., metrics...)
+    ga4_reports: dict[tuple[str, ...], list[tuple]] = field(default_factory=dict)
+    ga4_key_events: list[dict[str, Any]] = field(default_factory=list)
+    ga4_report_calls: list[dict[str, Any]] = field(default_factory=list)
+
     # Failure switches
     refresh_invalid_grant: bool = False
     exchange_fails: bool = False
@@ -105,6 +110,10 @@ class FakeGoogle:
             )
         if "/searchAnalytics/query" in url:
             return self._search_analytics(request)
+        if url.endswith(":runReport"):
+            return self._run_report(request)
+        if "/keyEvents" in url:
+            return httpx.Response(200, json={"keyEvents": self.ga4_key_events})
         if "/dataStreams" in url:
             prop = url.split("/v1beta/")[1].rsplit("/dataStreams", 1)[0]
             self.stream_lookups.append(prop)
@@ -147,6 +156,27 @@ class FakeGoogle:
         offset = body.get("startRow", 0)
         limit = body.get("rowLimit", SEARCH_ANALYTICS_ROW_LIMIT)
         return httpx.Response(200, json={"rows": rows[offset : offset + limit]})
+
+    def _run_report(self, request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        self.ga4_report_calls.append(body)
+
+        dims = tuple(d["name"] for d in body["dimensions"])
+        rows = self.ga4_reports.get(dims, [])
+        n_dims = len(dims)
+        return httpx.Response(
+            200,
+            json={
+                "rowCount": len(rows),
+                "rows": [
+                    {
+                        "dimensionValues": [{"value": str(c)} for c in r[:n_dims]],
+                        "metricValues": [{"value": str(c)} for c in r[n_dims:]],
+                    }
+                    for r in rows
+                ],
+            },
+        )
 
     def _token(self, request: httpx.Request) -> httpx.Response:
         form = dict(_form(request))

@@ -124,6 +124,19 @@ export interface Performance {
   };
 }
 
+export interface KeyEvent {
+  event_name: string;
+  custom: boolean;
+  counting: string | null;
+}
+
+export interface Goal {
+  event_name: string;
+  label: string;
+  goal_kind: string;
+  is_primary: boolean;
+}
+
 export const api = {
   me: (token: string) => request<Me>("/auth/me", token),
   listWebsites: (token: string) => request<Website[]>("/websites", token),
@@ -182,4 +195,24 @@ export const api = {
 
   website: (token: string, websiteId: string) =>
     request<Website>(`/websites/${websiteId}`, token),
+
+  keyEvents: (token: string, websiteId: string) =>
+    request<KeyEvent[]>(`/websites/${websiteId}/analytics/events`, token),
+
+  setGoals: (
+    token: string,
+    websiteId: string,
+    goals: { event_name: string; label?: string; goal_kind?: string; is_primary?: boolean }[],
+  ) =>
+    request<Goal[]>(`/websites/${websiteId}/analytics/goals`, token, {
+      method: "POST",
+      body: JSON.stringify({ goals }),
+    }),
+
+  syncAnalytics: (token: string, websiteId: string) =>
+    request<{ status: string; goals_synced: number }>(
+      `/websites/${websiteId}/sync/analytics`,
+      token,
+      { method: "POST" },
+    ),
 };

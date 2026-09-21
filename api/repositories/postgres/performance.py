@@ -171,3 +171,97 @@ class PerformanceRepository:
              limit %s
         """
         return await fetch_all(self._conn, sql, (website_id, start, end, limit))
+
+
+class AnalyticsRepository:
+    """Reading GA4 facts.
+
+    Outcomes are reported only where the customer mapped a goal event. Where
+    they have not, the answer is "not configured" — never a conversion rate
+    assembled from whichever event happened to look important.
+    """
+
+    def __init__(self, conn: AsyncConnection) -> None:
+        self._conn = conn
+
+    async def totals(
+        self, website_id: UUID, start: date, end: date
+    ) -> dict[str, Any] | None:
+        return await fetch_one(
+            self._conn,
+            """
+            select coalesce(sum(sessions), 0)         as sessions,
+                   coalesce(sum(active_users), 0)     as active_users,
+                   coalesce(sum(engaged_sessions), 0) as engaged_sessions,
+                   case when sum(sessions) > 0
+                        then sum(engaged_sessions)::numeric / sum(sessions) end
+                                                      as engagement_rate,
+                   coalesce(sum(key_events), 0)       as key_events
+              from ga4_daily
+             where website_id = %s and date between %s and %s
+            """,
+            (website_id, start, end),
+        )
+
+    async def daily_series(
+        self, website_id: UUID, start: date, end: date
+    ) -> list[dict[str, Any]]:
+        return await fetch_all(
+            self._conn,
+            """
+            select date, sessions, active_users, engaged_sessions, key_events
+              from ga4_daily
+             where website_id = %s and date between %s and %s
+             order by date
+            """,
+            (website_id, start, end),
+        )
+
+    async def by_dimension(
+        self, website_id: UUID, dimension_type: str, start: date, end: date,
+        limit: int = 20,
+    ) -> list[dict[str, Any]]:
+        return await fetch_all(
+            self._conn,
+            """
+            select dimension_value as label,
+                   sum(sessions)      as sessions,
+                   sum(active_users)  as active_users,
+                   sum(key_events)    as key_events
+              from ga4_dimension_daily
+             where website_id = %s and dimension_type = %s
+               and date between %s and %s
+             group by dimension_value
+             order by sessions desc
+             limit %s
+            """,
+            (website_id, dimension_type, start, end, limit),
+        )
+
+    async def outcomes(
+        self, website_id: UUID, start: date, end: date
+    ) -> list[dict[str, Any]]:
+        """Counts for mapped goals only. An unmapped property returns [], and
+        the caller must render that as "not configured" rather than zero."""
+        return await fetch_all(
+            self._conn,
+            """
+            select g.event_name, min(e.label) as label, min(e.goal_kind) as goal_kind,
+                   sum(g.event_count) as count
+              from ga4_goal_daily g
+              join ga4_goal_events e
+                on e.website_id = g.website_id and e.event_name = g.event_name
+             where g.website_id = %s and g.date between %s and %s
+             group by g.event_name
+             order by count desc
+            """,
+            (website_id, start, end),
+        )
+
+    async def has_goals(self, website_id: UUID) -> bool:
+        row = await fetch_one(
+            self._conn,
+            "select exists(select 1 from ga4_goal_events where website_id = %s) as ok",
+            (website_id,),
+        )
+        return bool(row and row["ok"])

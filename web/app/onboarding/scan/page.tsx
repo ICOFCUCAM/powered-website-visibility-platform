@@ -23,6 +23,7 @@ function Scanning() {
   const [performance, setPerformance] = useState<Performance | null>(null);
   const [linked, setLinked] = useState(false);
   const [synced, setSynced] = useState(false);
+  const [analyticsSynced, setAnalyticsSynced] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const started = useRef(false);
 
@@ -49,6 +50,14 @@ function Scanning() {
       setLinked(true);
       setSynced(result.status !== "failed");
       setPerformance(await api.performance(token, websiteId));
+
+      // Analytics is optional, so a failure here must not fail the wizard.
+      try {
+        await api.syncAnalytics(token, websiteId);
+        setAnalyticsSynced(true);
+      } catch {
+        setAnalyticsSynced(false);
+      }
     } catch (err) {
       if (err instanceof ApiError && err.status === 404) {
         // No Search Console link: not a failure, just nothing to sync yet.
@@ -67,7 +76,7 @@ function Scanning() {
     website,
     connection,
     searchConsoleLinked: linked,
-    analyticsLinked: false,
+    analyticsLinked: analyticsSynced,
     analyticsAvailable: hasAnalyticsScope(connection),
     synced,
   });

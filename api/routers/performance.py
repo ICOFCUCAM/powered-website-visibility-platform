@@ -15,7 +15,11 @@ from fastapi import APIRouter, Query
 from pydantic import BaseModel
 
 from api.deps import ConnectionDep, WebsiteScopeDep
-from api.repositories.postgres.performance import PerformanceRepository, Totals
+from api.repositories.postgres.performance import (
+    AnalyticsRepository,
+    PerformanceRepository,
+    Totals,
+)
 
 router = APIRouter(prefix="/websites", tags=["performance"])
 
@@ -191,3 +195,89 @@ async def pages(
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
 ) -> RowsOut:
     return await _rows(scope, conn, from_, to, order_by, limit, "pages")
+
+
+class OutcomeOut(BaseModel):
+    event_name: str
+    label: str
+    goal_kind: str
+    count: int
+
+
+class AnalyticsOut(BaseModel):
+    start: date
+    end: date
+    sessions: int
+    active_users: int
+    engaged_sessions: int
+    engagement_rate: float | None
+    # Deliberately nullable rather than 0: "we don't know" and "none happened"
+    # are different answers, and conflating them invents a conversion rate.
+    outcomes_configured: bool
+    outcomes: list[OutcomeOut]
+    outcomes_note: str | None
+    top_channels: list[dict]
+    top_countries: list[dict]
+    top_devices: list[dict]
+
+
+@router.get("/{website_id}/analytics", response_model=AnalyticsOut)
+async def analytics(
+    scope: WebsiteScopeDep,
+    conn: ConnectionDep,
+    from_: Annotated[date | None, Query(alias="from")] = None,
+    to: Annotated[date | None, Query()] = None,
+) -> AnalyticsOut:
+    start, end = (from_, to) if from_ and to else _default_window()
+    repo = AnalyticsRepository(conn)
+
+    totals = await repo.totals(scope.website.id, start, end) or {}
+    configured = await repo.has_goals(scope.website.id)
+    outcomes = await repo.outcomes(scope.website.id, start, end) if configured else []
+
+    return AnalyticsOut(
+        start=start,
+        end=end,
+        sessions=int(totals.get("sessions") or 0),
+        active_users=int(totals.get("active_users") or 0),
+        engaged_sessions=int(totals.get("engaged_sessions") or 0),
+        engagement_rate=(
+            float(totals["engagement_rate"])
+            if totals.get("engagement_rate") is not None
+            else None
+        ),
+        outcomes_configured=configured,
+        outcomes=[
+            OutcomeOut(
+                event_name=o["event_name"],
+                label=o["label"],
+                goal_kind=o["goal_kind"],
+                count=int(o["count"]),
+            )
+            for o in outcomes
+        ],
+        outcomes_note=(
+            None
+            if configured
+            else (
+                "Tell us which Analytics event means an enquiry or a sale and "
+                "we'll show outcomes here. We can't work it out from the name."
+            )
+        ),
+        top_channels=[
+            dict(r)
+            for r in await repo.by_dimension(
+                scope.website.id, "session_default_channel_group", start, end, 8
+            )
+        ],
+        top_countries=[
+            dict(r)
+            for r in await repo.by_dimension(scope.website.id, "country", start, end, 8)
+        ],
+        top_devices=[
+            dict(r)
+            for r in await repo.by_dimension(
+                scope.website.id, "device_category", start, end, 5
+            )
+        ],
+    )

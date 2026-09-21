@@ -19,6 +19,7 @@ from api.adapters import db
 from api.config import get_settings
 from api.domain.errors import AppError
 from api.hub import deps as hub_deps
+from api.hub.routes import analytics as hub_analytics
 from api.hub.routes import connections as hub_connections
 from api.hub.routes import oauth as hub_oauth
 from api.hub.routes import properties as hub_properties
@@ -80,6 +81,7 @@ def create_app() -> FastAPI:
         hub_connections.router,
         hub_properties.router,
         hub_sync.router,
+        hub_analytics.router,
     ):
         app.include_router(router, prefix="/api/v1")
 

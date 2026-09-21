@@ -9,18 +9,19 @@ Discover → Diagnose → Recommend → Fix → Measure → Repeat
 
 ## Status
 
-**M3 + the onboarding wizard.** The database, the API, the Google connection
+**M4 + the onboarding wizard.** The database, the API, the Google connection
 layer (OAuth with PKCE, encrypted token vault, property discovery,
-auto-matching, linking, ownership), Search Console synchronisation, and the
-five-step wizard a customer actually walks through:
+auto-matching, linking, ownership), Search Console and GA4 synchronisation,
+and the wizard a customer actually walks through:
 
 ```
 1. Your website        example.com
 2. Google account      you@example.com
 3. Search Console      sc-domain:example.com   ← best match, pre-selected
 4. Analytics           Example — GA4
+   What counts as a result?  contact_form_submit
 5. Business Profile    Coming soon
-6. Website scan        16 months of history
+6. Website scan        16 months of search history + 14 of analytics
 ```
 
 The crawler, the rules engine and the dashboard (M5–M9) do not exist yet.

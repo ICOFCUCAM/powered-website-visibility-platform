@@ -146,7 +146,13 @@ function ChooseProperties() {
           autoGa ? "auto" : "user_selected",
         );
       }
-      router.push(`/onboarding/scan?website_id=${websiteId}`);
+      // Analytics connected means there is a goal question to ask; without
+      // it there is nothing to ask about, so skip straight to the scan.
+      router.push(
+        chosenGa
+          ? `/onboarding/goals?website_id=${websiteId}`
+          : `/onboarding/scan?website_id=${websiteId}`,
+      );
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "We couldn't save that.");
       setBusy(false);

@@ -44,6 +44,16 @@ ANALYTICS_ACCOUNT_SUMMARIES = (
 ANALYTICS_DATA_STREAMS = (
     "https://analyticsadmin.googleapis.com/v1beta/{property}/dataStreams"
 )
+ANALYTICS_KEY_EVENTS = (
+    "https://analyticsadmin.googleapis.com/v1beta/{property}/keyEvents"
+)
+ANALYTICS_RUN_REPORT = (
+    "https://analyticsdata.googleapis.com/v1beta/{property}:runReport"
+)
+
+#: The Data API caps a report at 250,000 rows and charges quota by complexity.
+#: Anything larger is paginated with `offset`.
+ANALYTICS_ROW_LIMIT = 100_000
 
 DEFAULT_TIMEOUT = httpx.Timeout(20.0, connect=10.0)
 
@@ -304,3 +314,103 @@ class GoogleClient:
             if max_rows is not None and len(rows) >= max_rows:
                 return rows[:max_rows]
             start_row += len(page)
+
+    # -- Analytics (GA4) ---------------------------------------------------
+
+    async def list_key_events(
+        self, access_token: str, property_uri: str
+    ) -> list[dict[str, Any]]:
+        """The events this property counts as important.
+
+        GA4 key events are named by whoever set the property up:
+        `contact_form_submit`, `generate_lead`, `purchase`, `donate`. Nothing
+        in the name tells us which one means "an enquiry", so the platform
+        cannot infer it — the wizard asks, and this is the list it offers.
+        """
+        response = await self._http.get(
+            ANALYTICS_KEY_EVENTS.format(property=property_uri),
+            headers={"Authorization": f"Bearer {access_token}"},
+            params={"pageSize": 200},
+        )
+        if response.status_code in (403, 404):
+            return []
+        _raise_for(response)
+        return response.json().get("keyEvents", [])
+
+    async def run_report(
+        self,
+        access_token: str,
+        property_uri: str,
+        *,
+        start_date: str,
+        end_date: str,
+        dimensions: list[str],
+        metrics: list[str],
+        limit: int = ANALYTICS_ROW_LIMIT,
+        offset: int = 0,
+    ) -> dict[str, Any]:
+        """One page of a GA4 report.
+
+        Demographic dimensions are deliberately never requested anywhere in
+        this client. GA4 applies data thresholding when they are present,
+        silently withholding rows for small audiences — which would produce
+        exactly the kind of quietly-wrong total this product refuses to show.
+        """
+        response = await self._http.post(
+            ANALYTICS_RUN_REPORT.format(property=property_uri),
+            headers={"Authorization": f"Bearer {access_token}"},
+            json={
+                "dateRanges": [{"startDate": start_date, "endDate": end_date}],
+                "dimensions": [{"name": d} for d in dimensions],
+                "metrics": [{"name": m} for m in metrics],
+                "limit": limit,
+                "offset": offset,
+                # Keep totals honest: ask GA4 to tell us if it sampled.
+                "returnPropertyQuota": True,
+            },
+        )
+        _raise_for(response)
+        return response.json()
+
+    async def iter_report(
+        self,
+        access_token: str,
+        property_uri: str,
+        *,
+        start_date: str,
+        end_date: str,
+        dimensions: list[str],
+        metrics: list[str],
+        max_rows: int | None = None,
+    ) -> list[list[str]]:
+        """Every row of a report, following pagination.
+
+        Returns raw string cells in dimension-then-metric order; the caller
+        knows what it asked for. Stopping at the first page would truncate a
+        busy property and produce a chart that looks plausible and is wrong.
+        """
+        rows: list[list[str]] = []
+        offset = 0
+
+        while True:
+            payload = await self.run_report(
+                access_token,
+                property_uri,
+                start_date=start_date,
+                end_date=end_date,
+                dimensions=dimensions,
+                metrics=metrics,
+                offset=offset,
+            )
+            page = payload.get("rows", [])
+            for row in page:
+                cells = [d.get("value", "") for d in row.get("dimensionValues", [])]
+                cells += [m.get("value", "0") for m in row.get("metricValues", [])]
+                rows.append(cells)
+
+            total = int(payload.get("rowCount", len(rows)))
+            offset += len(page)
+            if not page or offset >= total:
+                return rows
+            if max_rows is not None and len(rows) >= max_rows:
+                return rows[:max_rows]

@@ -456,6 +456,160 @@ class HubRepository:
             )
         return len(rows)
 
+    # -- GA4 facts ---------------------------------------------------------
+
+    async def goal_events(self, website_id: UUID) -> list[dict[str, Any]]:
+        """Which GA4 events this customer has said are their outcomes.
+
+        Empty is a meaningful answer, not a missing one: the dashboard says
+        "outcomes not configured" rather than inventing a conversion rate.
+        """
+        return await fetch_all(
+            self._conn,
+            "select event_name, label, goal_kind, is_primary from ga4_goal_events "
+            " where website_id = %s order by is_primary desc, label",
+            (website_id,),
+        )
+
+    async def set_goal_events(
+        self, organization_id: UUID, website_id: UUID, goals: list[dict[str, Any]]
+    ) -> int:
+        """Replaces the mapping wholesale: the UI presents it as one choice,
+        so a removed goal must actually disappear."""
+        await self._conn.execute(
+            "delete from ga4_goal_events where website_id = %s", (website_id,)
+        )
+        if not goals:
+            return 0
+        async with self._conn.cursor() as cur:
+            await cur.executemany(
+                """
+                insert into ga4_goal_events
+                    (organization_id, website_id, event_name, label, goal_kind,
+                     is_primary)
+                values (%s, %s, %s, %s, %s, %s)
+                """,
+                [
+                    (
+                        organization_id,
+                        website_id,
+                        g["event_name"],
+                        g.get("label") or g["event_name"],
+                        g.get("goal_kind", "other"),
+                        bool(g.get("is_primary")),
+                    )
+                    for g in goals
+                ],
+            )
+        return len(goals)
+
+    async def upsert_ga4_daily(
+        self, organization_id: UUID, website_id: UUID, rows: list[tuple]
+    ) -> int:
+        if not rows:
+            return 0
+        async with self._conn.cursor() as cur:
+            await cur.executemany(
+                """
+                insert into ga4_daily
+                    (organization_id, website_id, date, sessions, active_users,
+                     engaged_sessions, engagement_rate, key_events)
+                values (%s, %s, %s, %s, %s, %s, %s, %s)
+                on conflict (website_id, date, channel_group) do update
+                   set sessions = excluded.sessions,
+                       active_users = excluded.active_users,
+                       engaged_sessions = excluded.engaged_sessions,
+                       engagement_rate = excluded.engagement_rate,
+                       key_events = excluded.key_events
+                """,
+                [
+                    (organization_id, website_id, d, sess, users, engaged, rate, ke)
+                    for (d, sess, users, engaged, rate, _views, ke) in rows
+                ],
+            )
+        return len(rows)
+
+    async def upsert_ga4_pages(
+        self, organization_id: UUID, website_id: UUID, rows: list[tuple]
+    ) -> int:
+        if not rows:
+            return 0
+        async with self._conn.cursor() as cur:
+            await cur.executemany(
+                """
+                insert into ga4_page_daily
+                    (organization_id, website_id, date, url_hash, page_path,
+                     sessions, active_users, engaged_sessions, key_events)
+                values (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                on conflict (website_id, date, url_hash) do update
+                   set sessions = excluded.sessions,
+                       active_users = excluded.active_users,
+                       engaged_sessions = excluded.engaged_sessions,
+                       key_events = excluded.key_events
+                """,
+                [
+                    (organization_id, website_id, d, h, path, sess, users, engaged, ke)
+                    for (d, h, path, sess, users, engaged, _rate, _views, ke) in rows
+                ],
+            )
+        return len(rows)
+
+    async def upsert_ga4_dimension(
+        self,
+        organization_id: UUID,
+        website_id: UUID,
+        dimension_type: str,
+        rows: list[tuple],
+    ) -> int:
+        if not rows:
+            return 0
+        async with self._conn.cursor() as cur:
+            await cur.executemany(
+                """
+                insert into ga4_dimension_daily
+                    (organization_id, website_id, date, dimension_type,
+                     dimension_value, sessions, active_users, engaged_sessions,
+                     engagement_rate, page_views, key_events)
+                values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                on conflict (website_id, date, dimension_type, dimension_value)
+                do update set sessions = excluded.sessions,
+                              active_users = excluded.active_users,
+                              engaged_sessions = excluded.engaged_sessions,
+                              engagement_rate = excluded.engagement_rate,
+                              page_views = excluded.page_views,
+                              key_events = excluded.key_events
+                """,
+                [
+                    (
+                        organization_id, website_id, d, dimension_type, value,
+                        sess, users, engaged, rate, views, ke,
+                    )
+                    for (d, value, sess, users, engaged, rate, views, ke) in rows
+                ],
+            )
+        return len(rows)
+
+    async def upsert_ga4_goals(
+        self, organization_id: UUID, website_id: UUID, rows: list[tuple]
+    ) -> int:
+        if not rows:
+            return 0
+        async with self._conn.cursor() as cur:
+            await cur.executemany(
+                """
+                insert into ga4_goal_daily
+                    (organization_id, website_id, date, event_name, event_count)
+                values (%s, %s, %s, %s, %s)
+                on conflict (website_id, date, event_name, url_hash) do update
+                   set event_count = excluded.event_count
+                """,
+                [
+                    (organization_id, website_id, d, name, count)
+                    for (d, name, count) in rows
+                ],
+            )
+        return len(rows)
+
     async def active_link_for(
         self, website_id: UUID, service: str
     ) -> dict[str, Any] | None:
