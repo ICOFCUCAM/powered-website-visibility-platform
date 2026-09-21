@@ -24,7 +24,7 @@ from uuid import UUID
 
 from psycopg import AsyncConnection
 
-from api.adapters.db import fetch_all, fetch_one
+from api.adapters.db import fetch_one
 from api.ai.metering import DEFAULT_SESSION, MeterSession
 from api.ai.plan import WeeklyPlanService
 from api.ai.providers import LLMProvider
@@ -32,6 +32,7 @@ from api.crawler.storage import ArtifactStore
 from api.reports import render
 from api.reports.mail import Mailer, Message
 from api.reports.weekly import ReportFigures, assemble
+from api.repositories.postgres.organizations import member_emails
 
 logger = logging.getLogger("visibility_hub.reports")
 
@@ -152,22 +153,8 @@ async def generate(
 
 
 async def recipients_for(conn: AsyncConnection, organization_id: UUID) -> list[str]:
-    """Everyone in the organisation who can act on it.
-
-    Viewers are included: a weekly summary is information, not a change, and
-    the people who read the reports are often not the people with write access.
-    """
-    rows = await fetch_all(
-        conn,
-        """
-        select u.email from organization_members m
-          join users u on u.id = m.user_id
-         where m.organization_id = %s and u.email is not null
-         order by u.email
-        """,
-        (organization_id,),
-    )
-    return [row["email"] for row in rows]
+    """Who the weekly report goes to. See `member_emails`."""
+    return await member_emails(conn, organization_id)
 
 
 async def send(

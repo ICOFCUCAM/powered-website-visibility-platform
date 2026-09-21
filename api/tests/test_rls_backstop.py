@@ -138,6 +138,15 @@ async def test_every_tenant_table_carries_an_organisation_column(client):
         # to scope it by — and carries only UUIDs and counts. Its policy
         # matches nothing, so the request-path role reads none of it.
         "deletion_receipts",
+        # Fleet health, deliberately not per-tenant: an incident like
+        # "sync_search_console failed for 400 of 412 websites" belongs to
+        # nobody's organisation, and scoping it by one would either split
+        # the aggregate back into four hundred alerts or attribute the
+        # whole fleet's failure to whichever tenant happened to be first.
+        # Its select policy is `using (false)`, so the request-path role
+        # reads none of it; only the service role, which never serves a
+        # browser, can see it at all.
+        "operator_alerts",
     }
 
     async with db.session() as conn:

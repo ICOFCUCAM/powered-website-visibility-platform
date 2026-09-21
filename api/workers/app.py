@@ -63,6 +63,7 @@ app.conf.update(
         "jobs.generate_recommendations": {"queue": "ai"},
         "jobs.generate_weekly_report": {"queue": "reports"},
         "scheduler.tick": {"queue": "analysis"},
+        "scheduler.alerts": {"queue": "analysis"},
         "scheduler.ensure_partitions": {"queue": "analysis"},
     },
     beat_schedule={
@@ -86,6 +87,15 @@ app.conf.update(
         "partitions": {
             "task": "scheduler.ensure_partitions",
             "schedule": crontab(hour=0, minute=20),
+        },
+        # Every fifteen minutes rather than on the tick: scanning for problems
+        # every five would be a scan that does nothing 95% of the time.
+        # Suppression makes the cadence a cost decision, not a correctness one.
+        "alerts": {
+            "task": "scheduler.alerts",
+            "schedule": float(
+                os.environ.get("ALERT_SCAN_SECONDS", 15 * 60)
+            ),
         },
     },
 )
@@ -172,6 +182,11 @@ def _enqueue(entry: Claimed) -> None:
         # the same job back to back at breakfast.
         expires=60 * 60 * 20,
     )
+
+
+@app.task(name="scheduler.alerts")
+def alerts() -> dict[str, Any]:
+    return run(jobs.alerts())
 
 
 @app.task(name="scheduler.ensure_partitions")

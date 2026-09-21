@@ -900,3 +900,65 @@ begin
 
     delete from secrets.oauth_tokens where id = token;
 end $$;
+
+
+-- ---------------------------------------------------------------------------
+-- 26. Operator alerts are fleet machinery. Two guarantees, both structural:
+--     the partial unique index keeps ONE open incident per fingerprint while
+--     still letting a recurrence open a new one, and the request path sees
+--     none of it — a chat channel's worth of "400 of 412 websites failed"
+--     belongs to nobody's organisation.
+-- ---------------------------------------------------------------------------
+do $$
+declare first_id bigint; second_id bigint; open_now int;
+begin
+    insert into operator_alerts (fingerprint, kind, severity, title)
+    values ('smoke-fp', 'job_failing', 'critical', 'smoke')
+    returning id into first_id;
+
+    begin
+        insert into operator_alerts (fingerprint, kind, severity, title)
+        values ('smoke-fp', 'job_failing', 'critical', 'smoke again');
+        raise exception 'ALERT FAIL: a second OPEN incident was allowed';
+    exception when unique_violation then
+        raise notice 'PASS  one open incident per fingerprint';
+    end;
+
+    update operator_alerts set resolved_at = now() where id = first_id;
+
+    insert into operator_alerts (fingerprint, kind, severity, title)
+    values ('smoke-fp', 'job_failing', 'warning', 'it came back')
+    returning id into second_id;
+
+    select count(*) into open_now from operator_alerts
+     where fingerprint = 'smoke-fp' and resolved_at is null;
+    if open_now <> 1 then
+        raise exception 'ALERT FAIL: % open incidents after a recurrence', open_now;
+    end if;
+    raise notice 'PASS  a recurrence opens a new incident and keeps the history';
+
+    delete from operator_alerts where fingerprint = 'smoke-fp';
+end $$;
+
+set role app_user;
+set app.user_id = 'aaaaaaaa-0000-0000-0000-000000000001';
+do $$
+begin
+    insert into operator_alerts (fingerprint, kind, severity, title)
+    values ('smoke-rls', 'job_failing', 'warning', 'smoke');
+    raise exception 'ALERT FAIL: a client role wrote an operator alert';
+exception
+    when insufficient_privilege then
+        raise notice 'PASS  a client role cannot write operator alerts';
+end $$;
+do $$
+declare n int;
+begin
+    select count(*) into n from operator_alerts;
+    if n <> 0 then
+        raise exception 'ALERT FAIL: a client role read % operator alert(s)', n;
+    end if;
+    raise notice 'PASS  operator alerts are invisible to the request path';
+end $$;
+reset role;
+reset app.user_id;

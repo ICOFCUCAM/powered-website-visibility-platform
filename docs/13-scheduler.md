@@ -160,8 +160,16 @@ how three hung Google syncs starve every score, plan and report behind them —
 which is exactly what a smoke run of this scheduler did before the pools were
 separated.
 
+## When a run fails
+
+A failed run is recorded here and alerted on separately: a scan every fifteen
+minutes turns these rows into one aggregated incident rather than four hundred
+messages, and tells the operator or the customer depending on whose problem it
+is. See [15-alerting.md](15-alerting.md).
+
 ## Not yet
 
-Alerting. A failed run is recorded and visible; nothing tells anyone. That is
-the launch-readiness item ("crawl-failure and sync-failure alerting"), and it
-wants a destination — email, Slack, a pager — more than it wants code.
+Retries. A failed run stays failed until its next slot comes round, which for
+a nightly job means a day. That is the right default for a sync that failed
+because Google was down, and the wrong one for a crawl that hit a transient
+timeout; telling the two apart is the work, not the retry itself.

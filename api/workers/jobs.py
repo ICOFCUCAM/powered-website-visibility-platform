@@ -33,6 +33,7 @@ from api.adapters import db
 from api.adapters.db import fetch_one
 from api.ai.deps import get_provider
 from api.ai.plan import WeeklyPlanService
+from api.alerting import channels, customer, operator
 from api.analysis.runner import AnalysisRunner
 from api.crawler.fetch import Fetcher
 from api.crawler.politeness import HostLimiter
@@ -316,6 +317,37 @@ async def ensure_partitions(months: int = 3) -> dict[str, Any]:
         await conn.execute("select app.ensure_partitions_ahead(%s)", (months,))
     logger.info("partitions ensured %d months ahead", months)
     return {"months": months, "at": datetime.now(UTC).isoformat()}
+
+
+async def alerts() -> dict[str, Any]:
+    """Look at the fleet, tell whoever needs to know.
+
+    Runs on its own cadence rather than inside the dispatcher's tick: the tick
+    is every five minutes because a slot should be claimed promptly, and
+    scanning for problems that often would mean either noise or a scan that
+    does nothing 95% of the time. Suppression makes the exact cadence
+    unimportant — a condition that is still true is not announced twice — so
+    the interval is chosen for cost, not for correctness.
+    """
+    notifier = channels.from_env()
+    smtp = SmtpSettings.from_env()
+    mailer = SmtpMailer(smtp) if smtp else None
+
+    async with db.service_task() as conn:
+        fleet = await operator.run(conn, notifier)
+        theirs = await customer.run(
+            conn, mailer, base_url=os.environ.get("WEB_BASE_URL", "")
+        )
+
+    return {
+        "opened": fleet.opened,
+        "resolved": fleet.resolved,
+        "notified": fleet.notified,
+        "undeliverable": fleet.undeliverable + theirs.undeliverable,
+        "customer_notices": len(theirs.created),
+        "customer_delivered": theirs.delivered,
+        "customer_suppressed": theirs.suppressed,
+    }
 
 
 BY_NAME = {

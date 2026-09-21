@@ -70,6 +70,7 @@ type = "forbidden"
 source_modules = [
     "api.domain", "api.routers", "api.repositories",
     "api.adapters", "api.deps", "api.main", "api.workers", "api.account",
+    "api.alerting",
 ]
 # `api.workers` is in that list deliberately. The nightly sync is the obvious
 # place for a worker to start building its own client "just for the scheduler";
@@ -120,9 +121,23 @@ type = "forbidden"
 source_modules = [
     "api.routers", "api.repositories", "api.domain", "api.adapters", "api.deps",
     "api.hub", "api.analysis", "api.crawler", "api.ai", "api.reports",
-    "api.account",
+    "api.account", "api.alerting",
 ]
 forbidden_modules = ["api.workers"]
+
+# Alerting watches the fleet: it reads across every tenant and posts to a
+# channel the customer cannot see. Nothing a browser can reach may import it,
+# so an endpoint cannot accidentally leak a cross-tenant count or fire an
+# operator page.
+[[tool.importlinter.contracts]]
+name = "Alerting is operator machinery, not a request path concern"
+type = "forbidden"
+source_modules = [
+    "api.routers", "api.repositories", "api.domain", "api.adapters", "api.deps",
+    "api.hub", "api.analysis", "api.crawler", "api.ai", "api.reports",
+    "api.account", "api.main",
+]
+forbidden_modules = ["api.alerting"]
 
 # The other direction, which matters more for extraction: the core must never
 # reach into the Hub. api.main is excluded because it is the composition root —
@@ -143,7 +158,7 @@ type = "forbidden"
 source_modules = [
     "api.domain", "api.routers", "api.repositories", "api.adapters",
     "api.analysis", "api.crawler", "api.hub", "api.reports", "api.deps",
-    "api.main", "api.workers", "api.account",
+    "api.main", "api.workers", "api.account", "api.alerting",
 ]
 forbidden_modules = ["anthropic"]
 # Direct imports only. Reaching the SDK *through* api.ai is the design — the

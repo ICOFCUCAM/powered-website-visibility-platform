@@ -69,6 +69,14 @@ lost: the dispatcher claims the most recent slot that has passed, so a worker
 pool that was down overnight catches up rather than skipping a day. See
 [13-scheduler.md](docs/13-scheduler.md).
 
+When something breaks, somebody is told — once. Four hundred failed syncs are
+one alert, not four hundred; it is counted while it persists, repeated after
+six hours so silence cannot read as recovery, and closed with a recovery
+notice. The split is deliberate: "the machine is broken" goes to an operator
+channel with no customer domain in it, and "your Google connection has stopped
+working" goes to the customer, with what to do about it. Neither audience gets
+the other's problems. See [15-alerting.md](docs/15-alerting.md).
+
 The Strategist reads through nine typed, read-only tools. It writes no SQL and
 cannot name a tenant: no tool schema contains an organisation or website id,
 so scope comes from the session and there is no argument that could reach
@@ -138,6 +146,7 @@ The technical specification in [`docs/`](docs/) remains the source of truth.
 | [12-v1-conformance.md](docs/12-v1-conformance.md) | **Frozen.** Section-by-section against the V1 spec |
 | [13-scheduler.md](docs/13-scheduler.md) | The nightly schedule: claims, leases, pools, what an operator reads |
 | [14-deletion.md](docs/14-deletion.md) | Disconnect and account deletion: what the cascade misses, and how it is verified |
+| [15-alerting.md](docs/15-alerting.md) | Operator incidents and customer notices: the line between noise and silence |
 
 ## V1 → V2 → V3
 

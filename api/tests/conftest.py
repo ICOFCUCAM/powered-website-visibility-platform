@@ -11,7 +11,10 @@ from httpx import ASGITransport, AsyncClient
 
 TEST_JWT_SECRET = "test-secret-at-least-32-bytes-long-for-hs256"
 
-os.environ.setdefault("JWT_SECRET", TEST_JWT_SECRET)
+# Set, not setdefault: `auth_headers` always signs with TEST_JWT_SECRET, so a
+# real JWT_SECRET in the operator's shell would make the app verify with a
+# different key and turn every authenticated test into a confusing 401.
+os.environ["JWT_SECRET"] = TEST_JWT_SECRET
 os.environ.setdefault("ENVIRONMENT", "test")
 
 # Google credentials for the Hub. Fake values: every Google call in the test
