@@ -133,6 +133,11 @@ async def test_every_tenant_table_carries_an_organisation_column(client):
         # safer, only more expensive: every site would pay for its own copy of
         # the same sentence.
         "issue_explanations",
+        # A deletion record that the deletion deletes is not a record. It sits
+        # outside the tenancy graph on purpose — there is no organisation left
+        # to scope it by — and carries only UUIDs and counts. Its policy
+        # matches nothing, so the request-path role reads none of it.
+        "deletion_receipts",
     }
 
     async with db.session() as conn:

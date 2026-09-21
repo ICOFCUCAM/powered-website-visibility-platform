@@ -9,7 +9,7 @@ Discover → Diagnose → Recommend → Fix → Measure → Repeat
 
 ## Status
 
-**V1 is complete, and it runs by itself.** The database, the API, the Google
+**V1 is complete, it runs by itself, and a customer can end it themselves.** The database, the API, the Google
 connection layer (OAuth with PKCE, encrypted token vault, property discovery,
 auto-matching, linking, ownership), Search Console and GA4 synchronisation,
 the crawler, the rules engine and scoring, the dashboard and audit screens,
@@ -54,6 +54,13 @@ and the Strategist, which answers from that data and nothing else:
 
   ▸ 3 checks against your data
 ```
+
+All fourteen items in the V1 definition of done are met, including the two
+that are usually still open at beta: **disconnect Google** — which revokes the
+token rather than dropping our copy of it — and **delete your account**, which
+reaches the eleven tables a cascade cannot, the encrypted refresh tokens, the
+fetched HTML in object storage and the sign-in itself, then hands back a
+receipt. See [14-deletion.md](docs/14-deletion.md).
 
 Every night the schedule syncs Google, crawls, re-scores, rewrites the plan
 and — on Mondays — builds the report, each website on its own minute so the
@@ -106,6 +113,7 @@ cd web && npm run dev                          # UI on :3000
 | `api/ai/tools/` | The nine typed, read-only queries the Strategist may run. Scope is bound server-side; no schema names a tenant. |
 | `api/reports/` | Weekly report assembly, the HTML and text email, signed links, delivery. |
 | `api/workers/` | The nightly schedule. Decides *when*; everything it runs is code the API already exercises. |
+| `api/account/` | Ending an account. The one module that spans the Hub boundary, because deletion must revoke Google access *and* delete product data. |
 | `web/` | Next.js: onboarding wizard, dashboard, audit, this week's plan, the assistant, sign-in. |
 | `db/` | Migrations, roles, schema tests. |
 
@@ -129,6 +137,7 @@ The technical specification in [`docs/`](docs/) remains the source of truth.
 | [11-expansion.md](docs/11-expansion.md) | Seams for everything deliberately not in V1 |
 | [12-v1-conformance.md](docs/12-v1-conformance.md) | **Frozen.** Section-by-section against the V1 spec |
 | [13-scheduler.md](docs/13-scheduler.md) | The nightly schedule: claims, leases, pools, what an operator reads |
+| [14-deletion.md](docs/14-deletion.md) | Disconnect and account deletion: what the cascade misses, and how it is verified |
 
 ## V1 → V2 → V3
 

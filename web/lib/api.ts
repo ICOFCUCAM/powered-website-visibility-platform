@@ -300,6 +300,28 @@ export interface Assistant {
   conversations: ConversationSummary[];
 }
 
+export interface Account {
+  email: string;
+  websites: string[];
+  organizations_deleted: number;
+  organizations_left: number;
+  google_connections: number;
+}
+
+export interface Deletion {
+  deleted: boolean;
+  organizations_deleted: number;
+  organizations_left: number;
+  rows_deleted: number;
+  objects_deleted: number;
+  google_connections_revoked: number;
+  google_tokens_not_revoked: number;
+  /** False when no identity provider is configured — said, not hidden. */
+  sign_in_deleted: boolean;
+  sign_in_note: string | null;
+  receipt: string | null;
+}
+
 export const api = {
   me: (token: string) => request<Me>("/auth/me", token),
   listWebsites: (token: string) => request<Website[]>("/websites", token),
@@ -423,6 +445,19 @@ export const api = {
 
   deleteConversation: (token: string, websiteId: string, conversationId: string) =>
     request<void>(`/websites/${websiteId}/conversations/${conversationId}`, token, {
+      method: "DELETE",
+    }),
+
+  account: (token: string) => request<Account>("/account", token),
+
+  deleteAccount: (token: string, confirmEmail: string) =>
+    request<Deletion>("/account", token, {
+      method: "DELETE",
+      body: JSON.stringify({ confirm_email: confirmEmail }),
+    }),
+
+  disconnectGoogle: (token: string, connectionId: string) =>
+    request<void>(`/google/connections/${connectionId}`, token, {
       method: "DELETE",
     }),
 

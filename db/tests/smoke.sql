@@ -825,3 +825,78 @@ begin
 end $$;
 reset role;
 reset app.user_id;
+
+
+-- ---------------------------------------------------------------------------
+-- 24. A deletion record that the deletion deletes is not a record.
+--
+--     `deletion_receipts` sits outside the tenancy graph deliberately: no
+--     foreign keys, nothing cascades into it, and it outlives everything it
+--     describes. It is also operator-only — there is no organisation left to
+--     scope a policy by, so the request-path role gets one that matches
+--     nothing rather than a REVOKE that `roles.sql` would silently undo on
+--     its next run.
+-- ---------------------------------------------------------------------------
+reset role;
+do $$
+declare receipt uuid; still int;
+begin
+    insert into deletion_receipts (user_id, organization_ids, rows_deleted)
+    values ('aaaaaaaa-0000-0000-0000-000000000001',
+            array['22222222-2222-2222-2222-222222222222'::uuid],
+            '{"gsc_query_daily": 40321}')
+    returning id into receipt;
+
+    delete from organizations where id = '22222222-2222-2222-2222-222222222222';
+
+    select count(*) into still from deletion_receipts where id = receipt;
+    if still <> 1 then
+        raise exception 'RECEIPT FAIL: the deletion deleted its own record';
+    end if;
+    raise notice 'PASS  a deletion receipt outlives the organisation it describes';
+
+    delete from deletion_receipts where id = receipt;
+end $$;
+
+set role app_user;
+set app.user_id = 'aaaaaaaa-0000-0000-0000-000000000001';
+do $$
+declare n int;
+begin
+    select count(*) into n from deletion_receipts;
+    if n <> 0 then
+        raise exception 'RECEIPT FAIL: a client role read % receipt(s)', n;
+    end if;
+    raise notice 'PASS  deletion receipts are invisible to the request path';
+end $$;
+reset role;
+reset app.user_id;
+
+
+-- ---------------------------------------------------------------------------
+-- 25. The encrypted refresh token is the PARENT of the connection, so
+--     deleting the connection leaves the secret behind. It is the one thing a
+--     cascade actively cannot help with, and the reason account deletion goes
+--     through the vault rather than trusting the foreign keys.
+-- ---------------------------------------------------------------------------
+do $$
+declare token uuid; still int;
+begin
+    insert into secrets.oauth_tokens (ciphertext, wrapped_dek, nonce)
+    values ('x','y','z') returning id into token;
+
+    insert into connections (organization_id, provider_key, external_id, label,
+                             refresh_token_id)
+    values ('11111111-1111-1111-1111-111111111111','google','smoke-token',
+            'owner@example.com', token);
+
+    delete from connections where external_id = 'smoke-token';
+
+    select count(*) into still from secrets.oauth_tokens where id = token;
+    if still <> 1 then
+        raise exception 'VAULT FAIL: the smoke test''s premise is wrong';
+    end if;
+    raise notice 'PASS  deleting a connection leaves its secret behind, as expected';
+
+    delete from secrets.oauth_tokens where id = token;
+end $$;

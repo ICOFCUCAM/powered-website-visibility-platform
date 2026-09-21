@@ -15,6 +15,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from api.account import routes as account_routes
 from api.adapters import db
 from api.config import get_settings
 from api.domain.errors import AppError
@@ -92,6 +93,10 @@ def create_app() -> FastAPI:
         plans.router,
         reports.router,
         strategist.router,
+        # Account deletion spans the Hub boundary — revoke Google access AND
+        # delete product data — so it is a bounded module of its own, mounted
+        # here for the same reason the Hub's routers are.
+        account_routes.router,
         # The Hub mounts its own routers. The core never imports them for
         # anything but composition, and the Hub imports none of the core's.
         hub_oauth.router,

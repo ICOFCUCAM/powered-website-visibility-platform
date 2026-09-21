@@ -26,6 +26,16 @@ class ArtifactStore(Protocol):
 
     async def get(self, key: str) -> bytes | None: ...
 
+    async def delete_prefix(self, prefix: str) -> int:
+        """Remove everything under a prefix, returning how many objects went.
+
+        This is why the key layout starts with the website id. A deletion
+        request has to reach the fetched HTML as well as the database rows,
+        and an object store has no foreign keys — the only handle on "all of
+        this customer's pages" is the prefix they were filed under.
+        """
+        ...
+
 
 class LocalArtifactStore:
     """Filesystem-backed, for development and tests.
@@ -59,6 +69,23 @@ class LocalArtifactStore:
             return None
         return gzip.decompress(path.read_bytes())
 
+    async def delete_prefix(self, prefix: str) -> int:
+        root = self._path(prefix.rstrip("/"))
+        if not root.exists():
+            return 0
+        removed = 0
+        if root.is_file():
+            root.unlink()
+            return 1
+        for path in sorted(root.rglob("*"), reverse=True):
+            if path.is_file():
+                path.unlink()
+                removed += 1
+            elif path.is_dir():
+                path.rmdir()
+        root.rmdir()
+        return removed
+
 
 class NullArtifactStore:
     """Records keys without storing bytes. For tests that do not care."""
@@ -72,3 +99,8 @@ class NullArtifactStore:
 
     async def get(self, key: str) -> bytes | None:
         return None
+
+    async def delete_prefix(self, prefix: str) -> int:
+        before = len(self.keys)
+        self.keys = [key for key in self.keys if not key.startswith(prefix)]
+        return before - len(self.keys)

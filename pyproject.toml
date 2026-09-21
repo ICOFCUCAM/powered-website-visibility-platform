@@ -69,7 +69,7 @@ name = "Only the Hub may construct a Google API client"
 type = "forbidden"
 source_modules = [
     "api.domain", "api.routers", "api.repositories",
-    "api.adapters", "api.deps", "api.main", "api.workers",
+    "api.adapters", "api.deps", "api.main", "api.workers", "api.account",
 ]
 # `api.workers` is in that list deliberately. The nightly sync is the obvious
 # place for a worker to start building its own client "just for the scheduler";
@@ -92,19 +92,35 @@ type = "forbidden"
 source_modules = ["api.hub"]
 forbidden_modules = [
     "api.routers", "api.crawler", "api.analysis", "api.ai", "api.reports",
-    "api.workers",
+    "api.workers", "api.account",
 ]
 
 # The scheduler decides WHEN, never WHAT. Everything it runs is code the API
 # already exercises, so a nightly job and a button press cannot drift apart —
 # and nothing in the request path may reach into the worker layer to make
 # something happen inline.
+# Account deletion is the one operation that spans the Hub boundary: revoke
+# the customer's Google access, then delete the product's data. It is a
+# bounded module rather than a core router for exactly that reason, and only
+# the composition root wires it — so nothing in the request path can reach
+# the Hub through it by accident.
+[[tool.importlinter.contracts]]
+name = "Only the composition root wires account deletion"
+type = "forbidden"
+source_modules = [
+    "api.routers", "api.repositories", "api.domain", "api.adapters", "api.deps",
+    "api.hub", "api.analysis", "api.crawler", "api.ai", "api.reports",
+    "api.workers",
+]
+forbidden_modules = ["api.account"]
+
 [[tool.importlinter.contracts]]
 name = "The request path does not import the workers"
 type = "forbidden"
 source_modules = [
     "api.routers", "api.repositories", "api.domain", "api.adapters", "api.deps",
     "api.hub", "api.analysis", "api.crawler", "api.ai", "api.reports",
+    "api.account",
 ]
 forbidden_modules = ["api.workers"]
 
@@ -127,7 +143,7 @@ type = "forbidden"
 source_modules = [
     "api.domain", "api.routers", "api.repositories", "api.adapters",
     "api.analysis", "api.crawler", "api.hub", "api.reports", "api.deps",
-    "api.main", "api.workers",
+    "api.main", "api.workers", "api.account",
 ]
 forbidden_modules = ["anthropic"]
 # Direct imports only. Reaching the SDK *through* api.ai is the design — the

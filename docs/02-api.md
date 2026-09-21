@@ -156,12 +156,22 @@ and the screen says so rather than answering.
 
 ### Reports and account
 ```
+GET    /account                       what deleting it would take with it
+DELETE /account                       deletes the account and its data
 GET    /websites/{id}/reports
 POST   /websites/{id}/reports          generate this week's report now
 POST   /websites/{id}/reports/{rid}/send
 GET    /reports/{rid}/html            signed, expiring URL
-DELETE /account                       deletes the account and its data
 ```
+
+`DELETE /account` is immediate and irreversible, and requires the caller to
+send their own email address as `confirm_email` — the difference between a
+mis-click and a decision. It deletes the organisations where they are the last
+owner, revokes their Google access, destroys the encrypted refresh tokens,
+removes the fetched HTML from object storage and deletes the sign-in, then
+returns counts and a receipt id. Where any of that could not be done — Google
+unreachable, no identity provider configured — the response says so rather
+than reporting a clean sweep. See [14-deletion.md](14-deletion.md).
 
 `/reports/{rid}/html` is the one route with no session, because it is opened
 from a mail client where there is neither a session nor an Authorization
