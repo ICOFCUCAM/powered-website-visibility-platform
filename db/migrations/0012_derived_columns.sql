@@ -48,6 +48,8 @@ declare
     ];
     i int;
 begin
+    -- app_service is deliberately absent: it writes these columns as the
+    -- outcome of verification, which is the one legitimate path.
     foreach r in array array['anon','authenticated','app_user'] loop
         if not exists (select 1 from pg_roles where rolname = r) then
             continue;

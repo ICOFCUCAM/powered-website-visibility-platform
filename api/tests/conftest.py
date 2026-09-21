@@ -53,8 +53,11 @@ async def client(database_url: str) -> AsyncIterator[AsyncClient]:
 async def two_tenants(client: AsyncClient) -> dict[str, object]:
     """Two organisations that must never see each other.
 
-    Seeded as the superuser because creating users and organisations is an
-    operator action, not something the API exposes in M1.
+    Seeded through the SERVICE role: creating organisations and users is an
+    operator action, not something the API exposes in M1. It cannot be done as
+    the request-path role, because RLS correctly refuses an insert for an
+    organisation the caller is not yet a member of — which is itself evidence
+    the policies are live.
     """
     import psycopg
 
@@ -63,7 +66,8 @@ async def two_tenants(client: AsyncClient) -> dict[str, object]:
     slug = uuid.uuid4().hex[:8]
 
     async with await psycopg.AsyncConnection.connect(
-        os.environ["DATABASE_URL"], autocommit=True
+        os.environ.get("SERVICE_DATABASE_URL", os.environ["DATABASE_URL"]),
+        autocommit=True,
     ) as conn:
         await conn.execute(
             "insert into organizations (id, name, slug) values (%s,%s,%s), (%s,%s,%s)",

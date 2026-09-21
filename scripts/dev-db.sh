@@ -33,4 +33,21 @@ done
 log "==> roles"
 psql -h "$DIR" -p "$PORT" -U postgres -d "$DB" -v ON_ERROR_STOP=1 -q -f "$ROOT/db/roles.sql" >/dev/null
 
-echo "export DATABASE_URL='postgresql://postgres@/${DB}?host=${DIR}&port=${PORT}'"
+# Redis: cache, rate limits, temporary OAuth state, Celery broker.
+REDIS_PORT="${DEV_REDIS_PORT:-56379}"
+if ! redis-cli -p "$REDIS_PORT" ping >/dev/null 2>&1; then
+    log "==> starting redis on $REDIS_PORT"
+    redis-server --port "$REDIS_PORT" --daemonize yes --save '' --appendonly no \
+                 --dir "$DIR" >/dev/null
+    for _ in $(seq 1 20); do
+        redis-cli -p "$REDIS_PORT" ping >/dev/null 2>&1 && break
+        sleep 0.2
+    done
+fi
+
+# The API connects as app_user so RLS applies; workers and the token vault
+# connect as app_service. Connecting either as postgres would bypass RLS.
+echo "export DATABASE_URL='postgresql://app_user@/${DB}?host=${DIR}&port=${PORT}'"
+echo "export SERVICE_DATABASE_URL='postgresql://app_service@/${DB}?host=${DIR}&port=${PORT}'"
+echo "export ADMIN_DATABASE_URL='postgresql://postgres@/${DB}?host=${DIR}&port=${PORT}'"
+echo "export REDIS_URL='redis://127.0.0.1:${REDIS_PORT}/0'"

@@ -1,14 +1,23 @@
 """Database access.
 
-Two things make this more than a connection pool:
+TWO POOLS, because the request path and background work need opposite things
+from row-level security.
 
-1. Every request runs inside a transaction that has `app.user_id` set, so the
-   row-level security policies in migration 0006 apply. Handlers get defence in
-   depth: if one forgets a tenant filter, RLS still refuses the rows.
+  session()          connects as `app_user`. RLS APPLIES, and every request
+                     runs in a transaction with `app.user_id` set. A handler
+                     that forgets a tenant filter still cannot return another
+                     organisation's rows.
 
-2. The pool connects as `app_user` (see db/roles.sql), never as a superuser or
-   the table owner. RLS is bypassed entirely by superusers, so connecting as
-   one would make every policy decorative.
+  service_session()  connects as `app_service`, which has BYPASSRLS and is the
+                     only role with access to the `secrets` schema. Used by
+                     sync workers, which legitimately span organisations and
+                     have no user to bind, and by the token vault.
+
+Connecting the request path as the database owner or a superuser would bypass
+every policy in migration 0006 and make them decorative. See db/roles.sql.
+
+Service-role work must never be driven by a user-supplied filter: the caller
+has already given up the backstop, so the tenant check has to be explicit.
 """
 
 from __future__ import annotations
@@ -23,29 +32,55 @@ from psycopg.rows import dict_row
 from psycopg_pool import AsyncConnectionPool
 
 _pool: AsyncConnectionPool | None = None
+_service_pool: AsyncConnectionPool | None = None
 
 
-async def open_pool(dsn: str, *, min_size: int = 1, max_size: int = 10) -> None:
-    global _pool
-    if _pool is not None:
-        return
-    _pool = AsyncConnectionPool(
-        dsn, min_size=min_size, max_size=max_size, open=False, kwargs={"autocommit": True}
+def _build(dsn: str, min_size: int, max_size: int) -> AsyncConnectionPool:
+    return AsyncConnectionPool(
+        dsn,
+        min_size=min_size,
+        max_size=max_size,
+        open=False,
+        kwargs={"autocommit": True},
     )
-    await _pool.open(wait=True, timeout=10)
+
+
+async def open_pool(
+    dsn: str,
+    *,
+    min_size: int = 1,
+    max_size: int = 10,
+    service_dsn: str | None = None,
+) -> None:
+    global _pool, _service_pool
+    if _pool is None:
+        _pool = _build(dsn, min_size, max_size)
+        await _pool.open(wait=True, timeout=10)
+    if service_dsn and _service_pool is None:
+        _service_pool = _build(service_dsn, min_size, max_size)
+        await _service_pool.open(wait=True, timeout=10)
 
 
 async def close_pool() -> None:
-    global _pool
-    if _pool is not None:
-        await _pool.close()
-        _pool = None
+    global _pool, _service_pool
+    for pool in (_pool, _service_pool):
+        if pool is not None:
+            await pool.close()
+    _pool = _service_pool = None
 
 
 def _require_pool() -> AsyncConnectionPool:
     if _pool is None:
         raise RuntimeError("database pool is not open")
     return _pool
+
+
+def _require_service_pool() -> AsyncConnectionPool:
+    if _service_pool is None:
+        raise RuntimeError(
+            "service database pool is not open; set SERVICE_DATABASE_URL"
+        )
+    return _service_pool
 
 
 @asynccontextmanager
@@ -65,6 +100,19 @@ async def session(user_id: UUID | None = None) -> AsyncIterator[AsyncConnection]
                 )
             else:
                 await conn.execute("select set_config('app.user_id', '', true)")
+            yield conn
+
+
+@asynccontextmanager
+async def service_session() -> AsyncIterator[AsyncConnection]:
+    """A connection for work that spans organisations, or that needs `secrets`.
+
+    RLS does not apply here. Anything user-facing reached through this session
+    must carry its own explicit tenant check — there is no backstop.
+    """
+    async with _require_service_pool().connection() as conn:
+        conn.row_factory = dict_row
+        async with conn.transaction():
             yield conn
 
 

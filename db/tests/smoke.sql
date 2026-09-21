@@ -7,6 +7,32 @@
 -- Roles come from db/roles.sql, which the runner applies first, so the tests
 -- exercise exactly the grants a real deployment has.
 
+-- Re-runnable: the fixtures use fixed ids, so a previous run is cleared
+-- first. Everything tenant-scoped cascades from the organization rows.
+delete from organizations where id in (
+    '11111111-1111-1111-1111-111111111111',
+    '22222222-2222-2222-2222-222222222222');
+delete from users where id in (
+    'aaaaaaaa-0000-0000-0000-000000000001',
+    'bbbbbbbb-0000-0000-0000-000000000002');
+delete from data_providers where key = 'example_vendor';
+-- Partitioned fact tables carry organization_id but no foreign key (a
+-- partitioned parent cannot cascade), so they are cleared by hand.
+do $$
+declare t text;
+begin
+    foreach t in array array[
+        'gsc_query_daily','gsc_page_daily','gsc_query_page_daily',
+        'ga4_page_daily','ga4_goal_daily','ga4_dimension_daily',
+        'page_snapshots','llm_calls','audit_log','backlink_changes','alert_events'
+    ] loop
+        execute format(
+            'delete from %I where organization_id in (%L, %L)', t,
+            '11111111-1111-1111-1111-111111111111',
+            '22222222-2222-2222-2222-222222222222');
+    end loop;
+end $$;
+
 -- Fixtures: two organizations that must never see each other.
 insert into organizations (id, name, slug) values
   ('11111111-1111-1111-1111-111111111111','Org A','org-a'),

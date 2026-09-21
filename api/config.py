@@ -25,6 +25,7 @@ def _required(name: str) -> str:
 @dataclass(frozen=True, slots=True)
 class Settings:
     database_url: str
+    service_database_url: str
     jwt_secret: str
     jwt_algorithm: str
     jwt_audience: str | None
@@ -47,6 +48,11 @@ def get_settings() -> Settings:
 
     return Settings(
         database_url=_required("DATABASE_URL"),
+        # Falls back to the request-path DSN so a developer who has not set it
+        # gets a clear failure from the vault rather than a silent superuser
+        # connection.
+        service_database_url=os.environ.get("SERVICE_DATABASE_URL")
+        or _required("DATABASE_URL"),
         jwt_secret=jwt_secret,
         jwt_algorithm=os.environ.get("JWT_ALGORITHM", "HS256"),
         jwt_audience=os.environ.get("JWT_AUDIENCE") or None,

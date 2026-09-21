@@ -30,6 +30,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         settings.database_url,
         min_size=settings.pool_min_size,
         max_size=settings.pool_max_size,
+        service_dsn=settings.service_database_url,
     )
     try:
         yield

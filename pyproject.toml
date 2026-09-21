@@ -13,11 +13,15 @@ dependencies = [
     "psycopg[binary,pool]>=3.2",
     "pyjwt>=2.9",
     "pydantic>=2.8",
+    "httpx>=0.27",
+    "cryptography>=43",
+    "redis>=5.0",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8.3",
+    "pytest-httpx>=0.30",
     "pytest-asyncio>=0.24",
     "httpx>=0.27",
     "import-linter>=2.0",
@@ -63,12 +67,21 @@ name = "Only the Hub may construct a Google API client"
 type = "forbidden"
 source_modules = [
     "api.domain", "api.routers", "api.repositories",
-    "api.adapters", "api.deps",
+    "api.adapters", "api.deps", "api.main",
 ]
 # Top-level packages only: import-linter rejects subpackages of external
 # packages. `google` covers google.oauth2, google.auth and google.analytics,
 # which is the intent anyway — no Google client of any kind outside the Hub.
 forbidden_modules = ["googleapiclient", "google", "google_auth_oauthlib"]
+
+[[tool.importlinter.contracts]]
+name = "The Hub does not import the core"
+type = "forbidden"
+source_modules = ["api.hub"]
+forbidden_modules = [
+    "api.routers", "api.repositories", "api.crawler",
+    "api.analysis", "api.ai", "api.reports",
+]
 
 [[tool.importlinter.contracts]]
 name = "Domain does not depend on delivery or persistence"
