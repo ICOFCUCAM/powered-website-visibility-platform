@@ -9,9 +9,29 @@ Discover → Diagnose → Recommend → Fix → Measure → Repeat
 
 ## Status
 
-Specification stage. No application code yet. The technical specification in
-[`docs/`](docs/) is the source of truth; `db/migrations/` holds the schema it
-describes.
+**M1 — foundation.** The database, the API skeleton with its org-scoping
+dependency chain, and the web shell exist and run. Google, the crawler, the
+rules engine and the dashboard (M2–M9) do not yet.
+
+```
+./scripts/dev-db.sh      # throwaway Postgres with every migration applied
+eval "$(./scripts/dev-db.sh)"
+export JWT_SECRET=<at least 32 bytes>
+.venv/bin/uvicorn api.main:app --port 8000     # API
+cd web && npm run dev                          # UI on :3000
+./scripts/check.sh       # lint, import contracts, pytest, schema, typecheck
+```
+
+| | |
+| --- | --- |
+| `api/domain/` | Pure logic — URL normalisation, the crawl policy, models, errors. No framework, no vendor. |
+| `api/adapters/` | The only place Supabase and the database driver appear. |
+| `api/repositories/` | Postgres implementations of the domain's repository protocols. |
+| `api/routers/` | `/api/v1` surface. |
+| `web/` | Next.js shell: sign-in, add a website, list them. |
+| `db/` | Migrations, roles, schema tests. |
+
+The technical specification in [`docs/`](docs/) remains the source of truth.
 
 ## Documents
 

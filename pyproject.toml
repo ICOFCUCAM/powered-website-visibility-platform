@@ -1,0 +1,77 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "visibility-hub-api"
+version = "0.1.0"
+description = "Visibility Hub — API and workers"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "psycopg[binary,pool]>=3.2",
+    "pyjwt>=2.9",
+    "pydantic>=2.8",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "httpx>=0.27",
+    "import-linter>=2.0",
+    "ruff>=0.6",
+]
+
+# Only `api` is a Python package; db/, docs/, scripts/ and web/ are not.
+[tool.setuptools.packages.find]
+include = ["api*"]
+
+[tool.pytest.ini_options]
+testpaths = ["api/tests"]
+asyncio_mode = "auto"
+filterwarnings = ["error::DeprecationWarning"]
+
+[tool.ruff]
+line-length = 90
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.importlinter]
+root_packages = ["api"]
+# Required to forbid third-party modules (supabase, psycopg, googleapiclient).
+include_external_packages = true
+
+# --- The architectural contracts from docs/08-architecture.md --------------
+# These are the boundary. A violation fails CI rather than waiting for a
+# reviewer to notice an import that autocomplete added.
+
+[[tool.importlinter.contracts]]
+name = "Domain layer is vendor-neutral"
+type = "forbidden"
+source_modules = ["api.domain"]
+forbidden_modules = [
+    "supabase", "gotrue", "postgrest", "storage3",
+    "psycopg", "psycopg_pool", "fastapi", "starlette",
+]
+
+[[tool.importlinter.contracts]]
+name = "Only the Hub may construct a Google API client"
+type = "forbidden"
+source_modules = [
+    "api.domain", "api.routers", "api.repositories",
+    "api.adapters", "api.deps",
+]
+# Top-level packages only: import-linter rejects subpackages of external
+# packages. `google` covers google.oauth2, google.auth and google.analytics,
+# which is the intent anyway — no Google client of any kind outside the Hub.
+forbidden_modules = ["googleapiclient", "google", "google_auth_oauthlib"]
+
+[[tool.importlinter.contracts]]
+name = "Domain does not depend on delivery or persistence"
+type = "layers"
+layers = ["api.routers", "api.deps", "api.repositories", "api.adapters", "api.domain"]
+exhaustive = false

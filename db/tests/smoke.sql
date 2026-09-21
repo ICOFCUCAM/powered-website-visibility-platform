@@ -4,18 +4,8 @@
 
 \set ON_ERROR_STOP on
 
--- Roles are cluster-wide, so this must be idempotent across re-runs.
-do $$ begin
-    if not exists (select 1 from pg_roles where rolname = 'app_user') then
-        create role app_user nologin;
-    end if;
-end $$;
-grant usage on schema public, app to app_user;
-grant select, insert, update, delete on all tables in schema public to app_user;
-grant execute on all functions in schema app to app_user;
--- A table-level GRANT re-grants every column, so the derived-column revokes
--- must be re-applied after it — exactly as a real deployment must.
-select app.lock_derived_columns();
+-- Roles come from db/roles.sql, which the runner applies first, so the tests
+-- exercise exactly the grants a real deployment has.
 
 -- Fixtures: two organizations that must never see each other.
 insert into organizations (id, name, slug) values

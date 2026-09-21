@@ -168,11 +168,15 @@ source_modules = [
     "api.crawler", "api.analysis", "api.ai", "api.reports",
     "api.routers", "api.domain",
 ]
-forbidden_modules = [
-    "googleapiclient", "google.oauth2", "google.auth",
-    "google.analytics", "google_auth_oauthlib",
-]
+# Top-level packages only — import-linter rejects subpackages of external
+# packages. `google` covers google.oauth2, google.auth and google.analytics,
+# which is the intent: no Google client of any kind outside the Hub.
+forbidden_modules = ["googleapiclient", "google", "google_auth_oauthlib"]
 ```
+
+The live configuration is in `pyproject.toml` under `[tool.importlinter]`, with
+`include_external_packages = true` (required whenever a forbidden module is a
+third-party package). Run it with `lint-imports`.
 
 The second contract is what keeps decision 1 real. Supabase is a hosting
 choice; if it appears in `api/domain/`, migrating to managed Postgres stops

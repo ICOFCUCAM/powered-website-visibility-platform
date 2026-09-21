@@ -20,6 +20,9 @@ for f in "$ROOT"/db/migrations/*.sql; do
     psql "$TARGET" -v ON_ERROR_STOP=1 -q -f "$f"
 done
 
+echo "==> roles"
+psql "$TARGET" -v ON_ERROR_STOP=1 -q -f "$ROOT/db/roles.sql"
+
 echo "==> smoke tests"
 psql "$TARGET" -v ON_ERROR_STOP=1 -f "$ROOT/db/tests/smoke.sql" 2>&1 | grep -E 'NOTICE|ERROR'
 
