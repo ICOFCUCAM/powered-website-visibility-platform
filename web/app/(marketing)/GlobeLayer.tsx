@@ -3,6 +3,8 @@
 import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
 
+import { viewerLongitude } from "@/lib/viewer";
+
 /**
  * The globe is decorative, costs ~30KB and runs an animation loop, so it is
  * kept out of the initial bundle and never mounted on a phone — where it sits
@@ -18,8 +20,12 @@ const Globe = dynamic(() => import("./Globe").then((m) => m.Globe), {
 
 export function GlobeLayer() {
   const [quality, setQuality] = useState<"high" | "med" | null>(null);
+  // The visitor's own meridian, so the globe opens on the part of the world
+  // they are standing in — correctly lit for the time it is there.
+  const [facing, setFacing] = useState(0);
 
   useEffect(() => {
+    setFacing(viewerLongitude());
     const decide = () =>
       setQuality(
         window.innerWidth >= 1024 ? "high" : window.innerWidth >= 768 ? "med" : null,
@@ -32,7 +38,7 @@ export function GlobeLayer() {
   if (quality === null) return null;
   return (
     <div className="mk-globe" aria-hidden="true">
-      <Globe quality={quality} />
+      <Globe quality={quality} facing={facing} />
     </div>
   );
 }

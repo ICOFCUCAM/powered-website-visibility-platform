@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { Eyebrow } from "./Eyebrow";
 import { GlobeLayer } from "./GlobeLayer";
 import { Orbit } from "./Orbit";
 
@@ -71,7 +72,7 @@ export default function Home() {
       <main>
         <section className="mk-shell mk-hero">
           <div>
-            <p className="mk-eyebrow">Be found. Everywhere.</p>
+            <Eyebrow />
             <h1 className="mk-h1">
               Turn your online presence into growth.
             </h1>

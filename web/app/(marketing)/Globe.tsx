@@ -2,6 +2,8 @@
 
 import { useEffect, useRef } from "react";
 
+import { subsolarPoint } from "@/lib/sun";
+
 import { CITY_DOTS, LAND_DOTS } from "./globe-dots";
 
 /* Precomputed once at module scope — never recomputed at runtime. */
@@ -25,12 +27,31 @@ const AXIS = -0.34; // axial tilt, for a natural lean
 const sinT = Math.sin(AXIS);
 const cosT = Math.cos(AXIS);
 
+type Vec3 = { x: number; y: number; z: number };
+
 /**
- * Where the light comes from, in the globe's own space. Everything shaded by
- * this rather than by depth alone is what gives the sphere a terminator —
- * a lit limb and a dark side — instead of reading as a flat disc of dots.
+ * How much faster than real time the globe turns. Earth rotates 15° an hour,
+ * which is imperceptible, so the hero runs as a time-lapse. Both the spin AND
+ * the sun advance on this same clock, so the two stay consistent: the
+ * terminator holds its place over the planet while the continents pass
+ * beneath it, exactly as a real time-lapse looks.
  */
-const LIGHT = { x: -0.52, y: 0.42, z: 0.74 };
+const TIME_LAPSE = 600;
+
+/** The unit vector to a lat/lng in view space, through the same axial tilt. */
+function unitVector(lat: number, lng: number, rot: number): Vec3 {
+  const la = lat * DEG;
+  const lo = (lng + rot) * DEG;
+  const cphi = Math.cos(la);
+  const x = cphi * Math.sin(lo);
+  const y0 = Math.sin(la);
+  const z0 = cphi * Math.cos(lo);
+  return {
+    x,
+    y: y0 * cosT - z0 * sinT,
+    z: y0 * sinT + z0 * cosT,
+  };
+}
 
 type Projected = { x: number; y: number; z: number; dot: number };
 
@@ -42,7 +63,7 @@ function smooth(edge0: number, edge1: number, x: number): number {
 
 function project(
   lat: number, lng: number, rot: number,
-  cx: number, cy: number, R: number, lift = 0,
+  cx: number, cy: number, R: number, light: Vec3, lift = 0,
 ): Projected {
   const la = lat * DEG;
   const lo = (lng + rot) * DEG;
@@ -56,7 +77,7 @@ function project(
   // Raw Lambert term against the light. Kept unclamped so the caller can
   // smooth ACROSS zero, which is what makes a terminator a gradient rather
   // than a hard line.
-  const dot = x0 * LIGHT.x + y * LIGHT.y + z * LIGHT.z;
+  const dot = x0 * light.x + y * light.y + z * light.z;
   return { x: cx + x0 * r, y: cy - y * r, z, dot };
 }
 
@@ -65,7 +86,7 @@ type Quality = "high" | "med";
 /** A latitude/longitude cage, faint, for the wireframe read. */
 function graticule(
   ctx: CanvasRenderingContext2D, rot: number,
-  cx: number, cy: number, R: number,
+  cx: number, cy: number, R: number, light: Vec3,
 ) {
   ctx.lineWidth = 1;
   ctx.strokeStyle = "rgba(120, 190, 175, 0.16)";
@@ -73,7 +94,7 @@ function graticule(
     ctx.beginPath();
     let on = false;
     for (let lng = -180; lng <= 180; lng += 6) {
-      const p = project(lat, lng, rot, cx, cy, R);
+      const p = project(lat, lng, rot, cx, cy, R, light);
       if (p.z <= 0) { on = false; continue; }
       if (!on) { ctx.moveTo(p.x, p.y); on = true; } else ctx.lineTo(p.x, p.y);
     }
@@ -83,7 +104,7 @@ function graticule(
     ctx.beginPath();
     let on = false;
     for (let lat = -90; lat <= 90; lat += 5) {
-      const p = project(lat, lng, rot, cx, cy, R);
+      const p = project(lat, lng, rot, cx, cy, R, light);
       if (p.z <= 0) { on = false; continue; }
       if (!on) { ctx.moveTo(p.x, p.y); on = true; } else ctx.lineTo(p.x, p.y);
     }
@@ -93,7 +114,7 @@ function graticule(
 
 function paint(
   ctx: CanvasRenderingContext2D, w: number, h: number,
-  rot: number, time: number, q: Quality,
+  rot: number, time: number, q: Quality, light: Vec3,
 ) {
   const cx = w / 2;
   const cy = h / 2;
@@ -102,8 +123,8 @@ function paint(
 
   // Where the light lands on the sphere, in screen space — the sub-solar
   // point. Everything below is positioned relative to it.
-  const lx = cx + LIGHT.x * R;
-  const ly = cy - LIGHT.y * R;
+  const lx = cx + light.x * R;
+  const ly = cy - light.y * R;
 
   // Ocean. Darker than the land dots so continents read against it, and lit
   // from the sub-solar point rather than from an arbitrary corner.
@@ -159,8 +180,8 @@ function paint(
   ctx.save();
   ctx.globalCompositeOperation = "lighter";
   const rim = ctx.createRadialGradient(
-    cx + LIGHT.x * R * 0.72, cy - LIGHT.y * R * 0.72, R * 0.1,
-    cx + LIGHT.x * R * 0.72, cy - LIGHT.y * R * 0.72, R * 0.78,
+    cx + light.x * R * 0.72, cy - light.y * R * 0.72, R * 0.1,
+    cx + light.x * R * 0.72, cy - light.y * R * 0.72, R * 0.78,
   );
   rim.addColorStop(0, "rgba(140, 226, 214, 0.20)");
   rim.addColorStop(1, "rgba(140, 226, 214, 0)");
@@ -170,14 +191,14 @@ function paint(
   ctx.fill();
   ctx.restore();
 
-  graticule(ctx, rot, cx, cy, R);
+  graticule(ctx, rot, cx, cy, R, light);
 
   // Land dots: LOD by stride, limb-fade by depth, day/night by the light term.
   const stride = q === "med" || w < 440 ? 2 : 1;
   const dotR = R * 0.0125;
   for (let i = 0; i < LAND.length; i += stride) {
     const d = LAND[i];
-    const p = project(d.lat, d.lng, rot, cx, cy, R);
+    const p = project(d.lat, d.lng, rot, cx, cy, R, light);
     if (p.z <= 0.02) continue;
     // Smoothed across zero, so the day/night edge is a band, not a line.
     const day = smooth(-0.18, 0.34, p.dot);
@@ -193,7 +214,7 @@ function paint(
   // City lights — warm, and brightest where the globe is in shadow, the way
   // city lights actually are.
   for (const c of CITIES) {
-    const p = project(c.lat, c.lng, rot, cx, cy, R);
+    const p = project(c.lat, c.lng, rot, cx, cy, R, light);
     if (p.z <= 0.04) continue;
     const night = 1 - smooth(-0.18, 0.34, p.dot);
     const a = (0.3 + 0.7 * p.z) * (0.3 + 0.7 * night);
@@ -218,7 +239,7 @@ function paint(
       const lift = 0.18 * Math.sin(Math.PI * f);
       const p = project(
         a.lat + (b.lat - a.lat) * f, a.lng + (b.lng - a.lng) * f,
-        rot, cx, cy, R, lift,
+        rot, cx, cy, R, light, lift,
       );
       if (p.z <= 0) { on = false; continue; }
       if (!on) { ctx.moveTo(p.x, p.y); on = true; } else ctx.lineTo(p.x, p.y);
@@ -231,7 +252,7 @@ function paint(
     const lift = 0.18 * Math.sin(Math.PI * head);
     const ph = project(
       a.lat + (b.lat - a.lat) * head, a.lng + (b.lng - a.lng) * head,
-      rot, cx, cy, R, lift,
+      rot, cx, cy, R, light, lift,
     );
     if (ph.z > 0) {
       ctx.shadowColor = "rgba(240, 214, 160, 0.9)";
@@ -247,7 +268,8 @@ function paint(
   // Scan pulses over major hubs.
   for (let i = 0; i < PULSE_HUBS.length; i++) {
     const p = project(
-      CITIES[PULSE_HUBS[i]].lat, CITIES[PULSE_HUBS[i]].lng, rot, cx, cy, R,
+      CITIES[PULSE_HUBS[i]].lat, CITIES[PULSE_HUBS[i]].lng,
+      rot, cx, cy, R, light,
     );
     if (p.z <= 0.06) continue;
     const phase = (time * 0.4 + i * 0.25) % 1;
@@ -271,7 +293,14 @@ function paint(
  * direction rather than by depth alone, so the sphere carries a terminator,
  * and the city lights burn warmest on the night side.
  */
-export function Globe({ quality = "high" }: { quality?: Quality }) {
+export function Globe({
+  quality = "high",
+  facing = 0,
+}: {
+  quality?: Quality;
+  /** Longitude to bring round to face the camera on load. */
+  facing?: number;
+}) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -281,6 +310,27 @@ export function Globe({ quality = "high" }: { quality?: Quality }) {
     if (!ctx) return;
 
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    // `facing` is brought to the camera at load: a point's view longitude is
+    // (lng + rot), so rot = -facing puts it dead centre.
+    const rot0 = -facing;
+    const startWall = Date.now();
+
+    /** Rotation and animation clock at a given offset of simulated time. */
+    const frameOf = (simMs: number): [number, number] =>
+      [rot0 + (simMs / 3_600_000) * 15, simMs / 1000];
+
+    /**
+     * The sun, in view space, at that same instant. Because the subsolar
+     * longitude drifts west at exactly the rate `rot` advances east, this
+     * comes out near-constant on screen — which is the point: the planet
+     * turns beneath a sun that stays put.
+     */
+    const lightOf = (simMs: number) => {
+      const at = new Date(startWall + simMs);
+      const sun = subsolarPoint(at);
+      return unitVector(sun.latitude, sun.longitude, rot0 + (simMs / 3_600_000) * 15);
+    };
     const dprCap = quality === "med" ? 1.25 : 1.5;
     let w = 0;
     let h = 0;
@@ -293,18 +343,23 @@ export function Globe({ quality = "high" }: { quality?: Quality }) {
       canvas.width = Math.max(1, Math.round(w * dpr));
       canvas.height = Math.max(1, Math.round(h * dpr));
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      if (reduced) paint(ctx, w, h, -20, 0, quality);
+      if (reduced) paint(ctx, w, h, ...frameOf(0), quality, lightOf(0));
     };
     resize();
     const ro = new ResizeObserver(resize);
     ro.observe(canvas);
 
     if (reduced) {
-      paint(ctx, w, h, -20, 0, quality);
+      // One frame, showing the world as it actually is at this moment.
+      paint(ctx, w, h, ...frameOf(0), quality, lightOf(0));
       return () => ro.disconnect();
     }
 
-    let rot = -20;
+    // Simulated time. Everything — the spin and the sun alike — is derived
+    // from this, so at t=0 the globe shows the world exactly as it is right
+    // now, and it stays internally consistent from there.
+    const startedAt = Date.now();
+    let elapsedSimMs = 0;
     let raf = 0;
     let last = 0;
     let running = false;
@@ -313,8 +368,8 @@ export function Globe({ quality = "high" }: { quality?: Quality }) {
       if (!running) return;
       const dt = last ? Math.min(0.05, (now - last) / 1000) : 0;
       last = now;
-      rot += dt * 3.2; // deg/sec — a calm rotation
-      paint(ctx, w, h, rot, now / 1000, quality);
+      elapsedSimMs += dt * 1000 * TIME_LAPSE;
+      paint(ctx, w, h, ...frameOf(elapsedSimMs), quality, lightOf(elapsedSimMs));
       raf = requestAnimationFrame(frame);
     };
     const start = () => {
@@ -342,7 +397,7 @@ export function Globe({ quality = "high" }: { quality?: Quality }) {
       ro.disconnect();
       document.removeEventListener("visibilitychange", onVis);
     };
-  }, [quality]);
+  }, [quality, facing]);
 
   return <canvas ref={canvasRef} aria-hidden="true" className="mk-globe-canvas" />;
 }
