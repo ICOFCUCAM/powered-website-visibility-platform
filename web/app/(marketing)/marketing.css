@@ -1,0 +1,436 @@
+/* The landing page. Dark, typographic, and its own surface — scoped under
+   .mk so none of it leaks into the app, which is light-first by design. */
+
+.mk {
+  --mk-bg: #07090b;
+  --mk-bg-2: #0d1218;
+  --mk-raise: #121a21;
+  --mk-ink: #eef2f6;
+  --mk-ink-2: #a8b8c6;
+  --mk-muted: #7d8b98;
+  --mk-line: rgba(255, 255, 255, 0.09);
+  --mk-line-2: rgba(255, 255, 255, 0.16);
+  --mk-teal: #43b6a2;
+  --mk-gold: #d9a441;
+  --mk-serif: "Instrument Serif", Georgia, "Times New Roman", serif;
+
+  background: var(--mk-bg);
+  color: var(--mk-ink);
+  min-height: 100dvh;
+  overflow-x: clip;
+}
+
+/* The page owns the whole viewport, including overscroll. */
+body:has(.mk) { background: #07090b; }
+
+.mk ::selection { background: var(--mk-teal); color: #04120f; }
+
+.mk-shell { max-width: 1240px; margin: 0 auto; padding-inline: 24px; }
+
+/* --- navigation ---------------------------------------------------------- */
+.mk-nav {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 24px; padding-block: 26px;
+}
+.mk-word { font-family: var(--mk-serif); font-size: 25px; letter-spacing: .01em;
+           white-space: nowrap; }
+.mk-nav-links { display: flex; gap: 30px; list-style: none; margin: 0; padding: 0; }
+.mk-nav-links a, .mk-signin {
+  font-family: var(--mono); font-size: 11.5px; letter-spacing: .13em;
+  text-transform: uppercase; color: var(--mk-ink-2); text-decoration: none;
+}
+.mk-nav-links a:hover, .mk-signin:hover { color: var(--mk-ink); }
+.mk-nav-right { display: flex; align-items: center; gap: 22px; }
+
+.mk-cta {
+  display: inline-flex; align-items: center; gap: 9px;
+  font-family: var(--mono); font-size: 11.5px; letter-spacing: .13em;
+  text-transform: uppercase; text-decoration: none;
+  padding: 12px 22px; border-radius: 999px;
+  background: var(--mk-ink); color: #06090c; border: 1px solid var(--mk-ink);
+  white-space: nowrap;
+}
+.mk-cta:hover { background: #fff; border-color: #fff; }
+.mk-cta--ghost { background: transparent; color: var(--mk-ink); border-color: var(--mk-line-2); }
+.mk-cta--ghost:hover { background: rgba(255,255,255,.06); border-color: var(--mk-ink-2); }
+.mk a:focus-visible, .mk button:focus-visible {
+  outline: 2px solid var(--mk-teal); outline-offset: 3px; border-radius: 4px;
+}
+
+/* --- hero ---------------------------------------------------------------- */
+.mk-hero {
+  display: grid; grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.15fr);
+  gap: 48px; align-items: center; padding-block: 40px 88px;
+}
+.mk-eyebrow {
+  font-family: var(--mono); font-size: 11px; letter-spacing: .22em;
+  text-transform: uppercase; color: var(--mk-ink-2); margin: 0 0 22px;
+}
+.mk-h1 {
+  font-family: var(--mk-serif); font-weight: 400;
+  font-size: clamp(46px, 6.2vw, 82px); line-height: 1.02;
+  letter-spacing: -.015em; margin: 0 0 24px;
+}
+.mk-lede {
+  font-size: 18px; line-height: 1.62; color: var(--mk-ink-2);
+  max-width: 46ch; margin: 0 0 34px;
+}
+.mk-actions { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+
+.mk-stats {
+  display: flex; gap: 0; margin-top: 64px; border-top: 1px solid var(--mk-line);
+  padding-top: 26px;
+}
+.mk-stat { padding-right: 30px; margin-right: 30px; border-right: 1px solid var(--mk-line); }
+.mk-stat:last-child { border-right: 0; margin-right: 0; padding-right: 0; }
+.mk-stat b {
+  display: block; font-family: var(--mk-serif); font-weight: 400;
+  font-size: 34px; line-height: 1.1;
+}
+.mk-stat span {
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--mk-muted);
+  /* Three short labels on one line. Wrapping them turns a confident row of
+     facts into a ragged paragraph. */
+  white-space: nowrap;
+}
+
+/* --- the orbital figure + product preview -------------------------------- */
+.mk-figure { position: relative; display: grid; place-items: center; min-height: 520px; }
+.mk-orbit { position: absolute; inset: -26% -18%; z-index: 0; pointer-events: none; }
+.mk-orbit svg { width: 100%; height: 100%; display: block; }
+
+/* The globe sits behind everything, square so the sphere is not an egg. */
+.mk-globe {
+  position: absolute; z-index: 0; pointer-events: none;
+  left: 56%; top: 50%; transform: translate(-50%, -50%);
+  width: min(128%, 720px); aspect-ratio: 1; opacity: .95;
+}
+.mk-globe-canvas { width: 100%; height: 100%; display: block; }
+
+/* --- the device ---------------------------------------------------------- */
+/* A tablet with thickness, a bezel, an edge highlight and a reflection, so it
+   reads as a physical object on a desk rather than a rectangle pasted on. */
+.mk-device { position: relative; z-index: 1; width: min(100%, 620px); perspective: 2200px; }
+.mk-device-tilt {
+  position: relative; transform-style: preserve-3d; transform-origin: left center;
+  transform: rotateY(-13deg) rotateX(4deg) rotateZ(2.5deg);
+}
+.mk-device-glow {
+  position: absolute; inset: -14px; border-radius: 42px;
+  background: rgba(67, 182, 162, .13); filter: blur(34px);
+}
+.mk-device-shadow {
+  position: absolute; inset: -4px; border-radius: 36px;
+  background: rgba(0, 0, 0, .6); filter: blur(5px);
+  transform: translate(10px, 16px);
+}
+.mk-device-edge {
+  position: absolute; inset: -1px; border-radius: 35px;
+  background: rgba(0, 0, 0, .45); transform: translate(4px, 6px);
+}
+/* The body: machined aluminium. The gradient runs across the tilt, so the
+   long edges catch light and the faces stay dark — which is what makes a
+   metal unibody read as metal rather than as a grey border. */
+.mk-ipad {
+  position: relative; border-radius: 34px; padding: 6px;
+  background:
+    linear-gradient(142deg,
+      #8a929c 0%, #5b636e 12%, #343a42 34%,
+      #272c33 62%, #434a54 84%, #767e89 100%);
+  box-shadow:
+    0 60px 130px -30px rgba(0, 0, 0, .95),
+    0 8px 24px -8px rgba(0, 0, 0, .8);
+}
+
+/* Hardware. Buttons are machined from the same billet as the body, so they
+   carry the same gradient — a button in a different grey is the detail that
+   makes a mockup look like a mockup. Each sits just PROUD of the silhouette,
+   because that is what a button is. */
+.mk-hw {
+  position: absolute; z-index: 0;
+  background: linear-gradient(142deg, #7d858f 0%, #4d545e 40%, #2c3138 100%);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .65);
+}
+/* Top edge, toward the right — the power button. */
+.mk-hw--power {
+  top: -5px; right: 78px; width: 38px; height: 6px;
+  border-radius: 3px 3px 0 0;
+  background: linear-gradient(to bottom, #9aa2ad 0%, #626a75 55%, #343a42 100%);
+}
+/* Near (left) edge, toward the top — volume up and down. */
+.mk-hw--vol-up, .mk-hw--vol-down {
+  left: -5px; width: 6px; height: 24px; border-radius: 3px 0 0 3px;
+  background: linear-gradient(to right, #9aa2ad 0%, #5c646f 60%, #2f353c 100%);
+}
+.mk-hw--vol-up { top: 62px; }
+.mk-hw--vol-down { top: 94px; }
+
+/* Speaker grilles are holes, not parts — dark, recessed, and repeating. */
+.mk-grille {
+  position: absolute; z-index: 1; width: 4px; height: 46px;
+  background: repeating-linear-gradient(
+    to bottom, transparent 0 1.6px, #05070a 1.6px 4.2px);
+  border-radius: 2px;
+}
+.mk-grille--left { left: 1px; bottom: 52px; }
+.mk-grille--right { right: 1px; bottom: 52px; }
+
+/* USB-C, centred on the far (right) edge. */
+.mk-port {
+  position: absolute; z-index: 0; right: -1px; top: 50%;
+  transform: translateY(-50%);
+  width: 4px; height: 26px; border-radius: 2px;
+  background: linear-gradient(to right, #05070a, #101519);
+  box-shadow: inset 0 0 2px rgba(0, 0, 0, .95);
+}
+
+/* The chamfer: the polished 45° cut where the back curves to the front. One
+   bright hairline on the lit edges, one dark on the shaded ones. */
+.mk-ipad-chamfer {
+  position: absolute; inset: 0; border-radius: 34px; pointer-events: none;
+  background: linear-gradient(142deg,
+    rgba(255,255,255,.75) 0%, rgba(255,255,255,0) 14%,
+    rgba(255,255,255,0) 86%, rgba(255,255,255,.45) 100%);
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor; mask-composite: exclude;
+  padding: 1px;
+}
+
+/* The bezel: black, uniform on all four sides, the way every iPad since the
+   Pro has been. */
+.mk-ipad-bezel {
+  position: relative; border-radius: 31px; padding: 11px;
+  background: #07080a;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .06);
+}
+
+/* The camera, centred on the top edge, with a lens ring and a catchlight. */
+.mk-ipad-cam {
+  position: absolute; top: 4.5px; left: 50%; transform: translateX(-50%);
+  width: 6px; height: 6px; border-radius: 50%;
+  background: radial-gradient(circle at 34% 30%, #3b4450 0%, #14181d 55%, #05070a 100%);
+  box-shadow: 0 0 0 .5px rgba(255, 255, 255, .13);
+}
+.mk-ipad-cam::after {
+  content: ""; position: absolute; top: 1.1px; left: 1.3px;
+  width: 1.6px; height: 1.6px; border-radius: 50%;
+  background: rgba(190, 215, 240, .5);
+}
+
+.mk-screen {
+  position: relative; overflow: hidden; border-radius: 20px;
+  /* A real iPad display is 4:3. Landscape is that ratio turned on its side,
+     not a box whose height is decided by how much text is in it. */
+  aspect-ratio: 4 / 3;
+  background: linear-gradient(145deg, #0f1820 0%, #0b1117 55%, #070c11 100%);
+}
+/* The hairline where the glass meets the bezel. */
+.mk-screen-top {
+  position: absolute; left: 34px; right: 34px; top: 0; height: 1px; z-index: 3;
+  background: linear-gradient(to right, transparent, rgba(255,255,255,.45), transparent);
+}
+/* Glass: a broad diagonal reflection, brightest at the top-left corner where
+   the light is, plus the faint inner edge of the display stack. */
+.mk-screen-sheen {
+  position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  border-radius: 20px;
+  background:
+    linear-gradient(145deg, rgba(255,255,255,.13) 0%,
+      rgba(255,255,255,.04) 22%, transparent 48%),
+    radial-gradient(120% 80% at 8% -10%, rgba(214,236,255,.10), transparent 60%);
+  box-shadow: inset 0 0 0 1px rgba(67, 182, 162, .08);
+}
+
+/* --- the screen: a landscape dashboard ----------------------------------- */
+.mk-app { display: flex; height: 100%; }
+
+.mk-side {
+  width: 23%; flex: none; display: flex; flex-direction: column;
+  padding: 15px 11px; border-right: 1px solid rgba(255, 255, 255, .06);
+  background: rgba(255, 255, 255, .02);
+}
+.mk-side-brand {
+  font-family: var(--mk-serif); font-size: 13.5px; color: var(--mk-ink);
+  margin-bottom: 14px;
+}
+.mk-side-nav { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; }
+.mk-side-nav li {
+  font-size: 10.5px; color: var(--mk-muted);
+  padding: 5px 8px; border-radius: 6px;
+}
+.mk-side-nav li.is-active {
+  color: var(--mk-ink); background: rgba(67, 182, 162, .12);
+  box-shadow: inset 0 0 0 1px rgba(67, 182, 162, .22);
+}
+.mk-side-foot {
+  margin-top: auto; padding-top: 12px; font-family: var(--mono);
+  font-size: 9px; color: var(--mk-muted);
+}
+
+.mk-main {
+  flex: 1; min-width: 0; padding: 17px 18px 18px;
+  display: flex; flex-direction: column; gap: 14px;
+}
+.mk-main-head {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 12px;
+}
+.mk-main-head h3 { margin: 0 0 1px; font-size: 14.5px; font-weight: 600; }
+.mk-main-head p { margin: 0; font-size: 11px; color: var(--mk-muted); }
+.mk-sample {
+  flex: none; font-family: var(--mono); font-size: 8.5px; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--mk-gold);
+  border: 1px solid rgba(217, 164, 65, .45); border-radius: 999px;
+  padding: 3px 8px; white-space: nowrap;
+}
+
+.mk-main-top { display: flex; align-items: center; gap: 16px; }
+.mk-ring {
+  --v: 72;
+  position: relative; width: 104px; height: 104px; border-radius: 50%; flex: none;
+  background: conic-gradient(var(--mk-teal) calc(var(--v) * 1%), rgba(255,255,255,.08) 0);
+  display: grid; place-items: center;
+}
+.mk-ring::after {
+  content: ""; position: absolute; inset: 9px; border-radius: 50%;
+  background: #0d141a;
+}
+.mk-ring-label { position: relative; z-index: 1; text-align: center; }
+.mk-ring-label b { display: block; font-size: 30px; font-weight: 600; line-height: 1; }
+.mk-ring-label span {
+  font-family: var(--mono); font-size: 7.5px; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--mk-muted);
+}
+
+/* Four across — this is the shape a landscape screen is for. */
+.mk-cards { flex: 1; min-width: 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px; }
+.mk-mini {
+  background: rgba(255,255,255,.035); border: 1px solid var(--mk-line);
+  border-radius: 8px; padding: 11px 10px;
+}
+.mk-mini span {
+  font-family: var(--mono); font-size: 8px; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--mk-muted); display: block;
+  margin-bottom: 3px;
+}
+.mk-mini em {
+  font-style: normal; display: flex; align-items: baseline; gap: 4px;
+  white-space: nowrap;
+}
+.mk-mini b { font-size: 19px; font-weight: 600; }
+.mk-mini i {
+  font-style: normal; font-family: var(--mono); font-size: 8.5px;
+  color: var(--mk-muted);
+}
+
+.mk-ops {
+  border-top: 1px solid var(--mk-line); padding-top: 12px;
+  flex: 1; display: flex; flex-direction: column;
+}
+.mk-ops p {
+  margin: 0 0 8px; font-family: var(--mono); font-size: 8.5px;
+  letter-spacing: .13em; text-transform: uppercase; color: var(--mk-muted);
+}
+.mk-ops ol {
+  margin: 0; padding: 0; list-style: none;
+  display: grid; gap: 11px; align-content: start;
+}
+.mk-ops li {
+  display: grid; grid-template-columns: 12px 1fr auto; gap: 9px;
+  align-items: center; font-size: 11px; color: var(--mk-ink-2);
+}
+.mk-ops li em { font-style: normal; font-family: var(--mono); color: var(--mk-muted); }
+.mk-tag {
+  font-family: var(--mono); font-size: 8.5px; letter-spacing: .06em;
+  color: var(--mk-muted); border: 1px solid var(--mk-line);
+  border-radius: 999px; padding: 2px 7px;
+}
+
+/* --- the four pillars ---------------------------------------------------- */
+.mk-section { padding-block: 84px; border-top: 1px solid var(--mk-line); }
+.mk-section-head { max-width: 62ch; margin-bottom: 44px; }
+.mk-h2 {
+  font-family: var(--mk-serif); font-weight: 400;
+  font-size: clamp(30px, 3.6vw, 44px); line-height: 1.1;
+  letter-spacing: -.01em; margin: 0 0 14px;
+}
+.mk-section-head p { margin: 0; color: var(--mk-ink-2); font-size: 16.5px; line-height: 1.6; }
+
+.mk-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; }
+.mk-pillar {
+  background: var(--mk-bg-2); border: 1px solid var(--mk-line);
+  border-radius: 12px; padding: 24px 22px 26px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.mk-weight {
+  font-family: var(--mk-serif); font-size: 38px; line-height: 1;
+  color: var(--mk-teal);
+}
+.mk-pillar h3 { margin: 0; font-size: 16.5px; font-weight: 600; }
+.mk-pillar p { margin: 0; font-size: 14px; line-height: 1.6; color: var(--mk-ink-2); }
+.mk-source {
+  margin-top: auto; padding-top: 14px; font-family: var(--mono);
+  font-size: 10.5px; letter-spacing: .07em; color: var(--mk-muted);
+}
+
+/* --- the loop ------------------------------------------------------------ */
+.mk-loop { display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px; }
+.mk-loop--four { grid-template-columns: repeat(4, 1fr); }
+.mk-beat { border-top: 2px solid var(--mk-line-2); padding-top: 18px; }
+.mk-beat b {
+  display: block; font-family: var(--mono); font-size: 11px;
+  letter-spacing: .15em; text-transform: uppercase; color: var(--mk-teal);
+  margin-bottom: 9px;
+}
+.mk-beat p { margin: 0; font-size: 14.5px; line-height: 1.6; color: var(--mk-ink-2); }
+
+/* --- closing + footer ---------------------------------------------------- */
+.mk-close { text-align: center; padding-block: 96px; border-top: 1px solid var(--mk-line); }
+.mk-close .mk-h2 { margin-inline: auto; max-width: 18ch; }
+.mk-close p { color: var(--mk-ink-2); max-width: 52ch; margin: 0 auto 30px; font-size: 16.5px; }
+
+.mk-foot {
+  display: flex; justify-content: space-between; align-items: flex-end;
+  gap: 24px; padding-block: 34px 44px; border-top: 1px solid var(--mk-line);
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--mk-muted); line-height: 1.9;
+}
+
+/* --- narrower viewports --------------------------------------------------- */
+@media (max-width: 1000px) {
+  .mk-hero { grid-template-columns: 1fr; gap: 56px; padding-bottom: 64px; }
+  .mk-figure { min-height: 420px; order: 2; }
+  .mk-grid { grid-template-columns: repeat(2, 1fr); }
+  .mk-loop { grid-template-columns: repeat(2, 1fr); gap: 26px 16px; }
+  .mk-nav-links { display: none; }
+}
+
+@media (max-width: 620px) {
+  .mk-shell { padding-inline: 16px; }
+  .mk-nav { padding-block: 20px; gap: 12px; }
+  .mk-word { font-size: 20px; }
+  .mk-nav-right { gap: 14px; }
+  .mk-cta { padding: 10px 16px; font-size: 10.5px; letter-spacing: .1em; }
+  .mk-hero { padding-top: 18px; }
+  .mk-grid, .mk-loop { grid-template-columns: 1fr; }
+  .mk-stats { flex-wrap: wrap; gap: 22px 0; }
+  .mk-stat { padding-right: 26px; margin-right: 26px; }
+  /* Flat on a phone: a tilted tablet at 390px is just a smaller,
+     harder-to-read tablet. */
+  .mk-device-tilt { transform: none; }
+  .mk-screen { aspect-ratio: auto; }
+  .mk-side { display: none; }
+  .mk-main-top { flex-direction: column; align-items: stretch; gap: 12px; }
+  .mk-ring { align-self: center; }
+  .mk-cards { grid-template-columns: repeat(2, 1fr); }
+  .mk-device-shadow, .mk-device-edge { transform: translate(3px, 6px); }
+  .mk-foot { flex-direction: column; align-items: flex-start; }
+  .mk-section { padding-block: 60px; }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .mk-orbit .mk-spin { transform-origin: 50% 50%; animation: mk-rotate 90s linear infinite; }
+  @keyframes mk-rotate { to { transform: rotate(360deg); } }
+}
