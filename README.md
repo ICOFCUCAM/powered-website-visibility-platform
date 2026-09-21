@@ -9,10 +9,11 @@ Discover → Diagnose → Recommend → Fix → Measure → Repeat
 
 ## Status
 
-**M5 + the onboarding wizard.** The database, the API, the Google connection
+**M6 + the onboarding wizard.** The database, the API, the Google connection
 layer (OAuth with PKCE, encrypted token vault, property discovery,
 auto-matching, linking, ownership), Search Console and GA4 synchronisation,
-the crawler, and the wizard a customer actually walks through:
+the crawler, the rules engine and scoring, and the wizard a customer
+actually walks through:
 
 ```
 1. Your website        example.com
@@ -24,7 +25,7 @@ the crawler, and the wizard a customer actually walks through:
 6. Website scan        16 months of search history + 14 of analytics
 ```
 
-The rules engine and the dashboard (M6–M9) do not exist yet.
+The dashboard, weekly report and AI strategist (M7–M9) do not exist yet.
 
 The live Google handshake is the one thing untested here, because it needs a
 verified Cloud project and a real user's consent. Everything up to it runs
@@ -47,6 +48,7 @@ cd web && npm run dev                          # UI on :3000
 | `api/routers/` | `/api/v1` surface. |
 | `api/hub/` | The Google Hub: the only module that may reach Google. Its own routes, services, providers and domain events. |
 | `api/crawler/` | Politeness, frontier, fetch, extraction, render escalation. |
+| `api/analysis/` | 27 deterministic rules, the CTR baseline, versioned scoring. |
 | `web/` | Next.js: the onboarding wizard, sign-in, website list. |
 | `db/` | Migrations, roles, schema tests. |
 

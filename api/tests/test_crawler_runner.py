@@ -16,6 +16,7 @@ from api.crawler.politeness import HostLimiter
 from api.crawler.runner import CrawlRunner
 from api.crawler.storage import NullArtifactStore
 from api.tests.fake_website import ORIGIN, FakeWebsite, page, sitemap_for
+from api.tests.verification import verify_website
 
 
 @pytest.fixture
@@ -42,7 +43,7 @@ def website_rows(service_conn):
             (site_id, org, "example.com", ORIGIN),
         )
         if verified:
-            await _verify(service_conn, org, site_id)
+            await verify_website(service_conn, org, site_id)
         crawl = await (
             await service_conn.execute(
                 "insert into crawls (organization_id, website_id, trigger) "
@@ -346,33 +347,3 @@ async def test_a_verified_website_is_crawled(service_conn, website_rows):
     )
     assert summary.stopped_reason is None
     assert summary.fetched == 1
-
-
-async def _verify(conn, org, website_id):
-    """Give the website a covering, owner-held Search Console property."""
-    import uuid as _uuid
-
-    connection_id, property_id = _uuid.uuid4(), _uuid.uuid4()
-    await conn.execute(
-        "insert into connections (id, organization_id, provider_key, external_id, label) "
-        "values (%s,%s,'google',%s,'owner@example.com')",
-        (connection_id, org, _uuid.uuid4().hex),
-    )
-    await conn.execute(
-        "insert into connection_properties (id, organization_id, connection_id, "
-        "  provider_key, service, property_uri, permission_level, matched_hosts) "
-        "values (%s,%s,%s,'google','search_console','sc-domain:example.com',"
-        "        'siteOwner','{example.com}')",
-        (property_id, org, connection_id),
-    )
-    await conn.execute(
-        "insert into website_connections (organization_id, website_id, property_id, "
-        "  provider_key, service) values (%s,%s,%s,'google','search_console')",
-        (org, website_id, property_id),
-    )
-    await conn.execute(
-        "update websites set ownership_verified_at = now(), "
-        "  ownership_method = 'search_console', ownership_property_id = %s "
-        " where id = %s",
-        (property_id, website_id),
-    )

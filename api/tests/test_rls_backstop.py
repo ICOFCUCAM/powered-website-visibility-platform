@@ -103,3 +103,62 @@ async def test_the_service_role_can_reach_the_vault_and_is_separate(client):
 
     assert row["role"] != "postgres", "the service role must not be a superuser"
     assert row["n"] >= 0
+
+
+async def test_every_tenant_table_carries_an_organisation_column(client):
+    """The rule the whole RLS design depends on.
+
+    A tenant table without organization_id cannot carry the standard
+    one-predicate policy, and the failure mode is silent: RLS with no policy
+    filters a SELECT to nothing rather than erroring, so a screen just shows
+    empty and no test notices. That is exactly how the audit history was
+    broken.
+    """
+    expected_without = {
+        # Catalogues, shared by every tenant.
+        "issue_types", "providers", "provider_services", "visibility_surfaces",
+        "score_components", "action_capabilities", "data_providers",
+        # Identity and membership, scoped by user rather than organisation.
+        "users", "organizations", "organization_members", "organization_branding",
+        # Internal queues and logs, service-role only.
+        "crawl_frontier",
+    }
+
+    async with db.session() as conn:
+        rows = await (
+            await conn.execute(
+                """
+                select c.relname as table_name, c.relrowsecurity as rls_enabled,
+                       exists(select 1 from information_schema.columns col
+                               where col.table_name = c.relname
+                                 and col.column_name = 'organization_id') as has_org,
+                       exists(select 1 from pg_policies p
+                               where p.tablename = c.relname) as has_policy
+                  from pg_class c
+                  join pg_namespace n on n.oid = c.relnamespace
+                 where n.nspname = 'public' and c.relkind = 'r'
+                   and c.relispartition = false
+                 order by c.relname
+                """
+            )
+        ).fetchall()
+
+    missing_org = [
+        r["table_name"] for r in rows
+        if not r["has_org"] and r["table_name"] not in expected_without
+    ]
+    assert missing_org == [], (
+        "tenant tables without organization_id cannot carry the standard RLS "
+        f"policy: {missing_org}"
+    )
+
+    # And RLS without a policy is the silent failure, so flag it directly.
+    enabled_without_policy = [
+        r["table_name"] for r in rows
+        if r["rls_enabled"] and not r["has_policy"]
+        and r["table_name"] not in {"crawl_frontier"}
+    ]
+    assert enabled_without_policy == [], (
+        "row-level security is enabled with no policy, so the request-path "
+        f"role silently reads nothing from: {enabled_without_policy}"
+    )

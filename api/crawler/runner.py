@@ -434,6 +434,7 @@ class CrawlRunner:
             (
                 crawl_id, website_id, page_id, url_hash(link.url), link.url,
                 link.anchor_text or None, link.rel, link.is_internal,
+                website_id,
             )
             for link in facts.links
         ]
@@ -442,10 +443,11 @@ class CrawlRunner:
         async with self._conn.cursor() as cur:
             await cur.executemany(
                 """
-                insert into page_links (crawl_id, website_id, from_page_id,
-                                        to_url_hash, to_url, anchor_text, rel,
-                                        is_internal)
-                values (%s, %s, %s, %s, %s, %s, %s, %s)
+                insert into page_links (crawl_id, website_id, organization_id,
+                                        from_page_id, to_url_hash, to_url,
+                                        anchor_text, rel, is_internal)
+                select %s, %s, w.organization_id, %s, %s, %s, %s, %s, %s
+                  from websites w where w.id = %s
                 on conflict (crawl_id, from_page_id, to_url_hash) do nothing
                 """,
                 rows,
