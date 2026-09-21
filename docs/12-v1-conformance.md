@@ -1,5 +1,10 @@
 # 12 — V1 specification conformance
 
+> **Frozen — architectural source of truth.**
+> Changes to this document are architectural decisions, not edits. Amend it
+> deliberately, with the reason recorded in
+> [10-decisions.md](10-decisions.md).
+
 Every section of the V1 specification, and what this repository does about it.
 
 **Status key** — `match`: already specified this way · `adopted`: the spec
@@ -17,10 +22,40 @@ call to overrule · `open`: needs a decision or an external step.
 | 2 | User performs only Google's consent steps | match | [04 §2](04-google-hub.md) |
 | 3 | Journey: landing → account → website → verify → Google → SC/GA4 → sync → crawl → analysis → dashboard → AI | adopted | [07](07-ui.md), [09](09-mvp-sequence.md) |
 
-**Verify website** (§3) was missing and is now a named step. It matters beyond
-onboarding polish: ownership verification is what stops the crawler being
-pointed at a site the user does not own. GSC linkage is the strongest proof —
-if Google says they own it, they own it — with a DNS/file token as fallback.
+**Verify website** (§3) was missing and is now a named step, with two separate
+concepts rather than one flag:
+
+```
+WEBSITE
+  ├── ownership_verified   evidence the customer controls this website
+  │                        → required before privileged analysis, before the
+  │                          free page cap is raised, before any write capability
+  └── crawl_allowed        derived: verification AND not paused AND plan permits
+                             AND robots does not block
+```
+
+They move for different reasons and are checked at different moments.
+Collapsing them means either an unverified website inherits crawl rights from a
+setting, or a verified customer cannot pause their own crawl.
+
+**And Search Console access is not generic ownership.** Holding a property does
+not prove control of every URL typed into the product — the property types
+differ in exactly the ways that matter:
+
+| Property | Covers |
+| --- | --- |
+| `sc-domain:example.com` | every subdomain, every scheme, every port |
+| `https://www.example.com/` | that scheme, that host, that path prefix — nothing else |
+
+So a user holding `https://www.example.com/` has proven nothing about
+`https://blog.example.com/`, `http://www.example.com/` or
+`https://example.com/`. `app.property_covers_url()` decides coverage and
+`website_ownership_evidence` combines it with permission level — a
+`siteUnverifiedUser` can see a property listed while having no rights to it, so
+that can never constitute evidence. Smoke test 11 covers eleven cases including
+www, scheme, subdomain, path-prefix and a suffix-spoof
+(`example.com.evil.net`); test 12 asserts that mere access is rejected and a
+covering property held as owner is accepted.
 
 ## 4 Technology stack
 
@@ -39,17 +74,34 @@ caching, rate limiting, OAuth state and as the Celery broker, exactly as
 specified. The *frontier* — the set of URLs discovered but not yet fetched —
 stays a Postgres table leased with `SELECT … FOR UPDATE SKIP LOCKED`.
 
-Reason: a crawl runs for tens of minutes and workers get evicted mid-run. With
-the frontier in Redis, a lost worker loses its in-flight URLs and a Redis
-restart loses the crawl. With it in Postgres, a killed worker's lease simply
-expires and the crawl resumes at page 400 of 500. Celery still dispatches the
-work; Postgres is the durable record of what remains. Proven by
-`db/tests/smoke.sql` test 4.
+The guarantee worth stating is not "the crawler uses Postgres" — it is the
+recovery invariant:
+
+> A URL whose lease expires becomes eligible for another worker **without
+> requiring the original worker to recover**.
+
+That makes worker death a non-event: no supervisor detects it, no peer hands
+off, no in-flight URL is lost. `worker_id` is recorded for diagnostics only and
+is never consulted when reclaiming a lease, because consulting it would make
+recovery depend on knowing something about the dead worker.
+
+```
+crawl_frontier
+├── url · url_hash · depth · discovered_at
+├── state              pending | leased | done | failed | skipped
+├── worker_id          diagnostic only, never read during recovery
+├── leased_at · lease_expires_at
+├── attempts · last_error
+```
+
+Celery still dispatches; Postgres is the durable record of what remains. Smoke
+tests 4 and 5 kill a worker mid-crawl and prove a second worker claims all of
+its URLs.
 
 ## 5 High-level architecture
 
 Matches, with the sync layer of §44 made explicit. See
-[the architecture diagram](#) and [08](08-structure.md). Worker pools are split
+[the architecture diagram](#) and [08](08-architecture.md). Worker pools are split
 by job shape (crawl / render / sync / analysis / ai / reports) so one tenant's
 backfill cannot starve another's nightly sync.
 
@@ -83,15 +135,34 @@ brand-new account a populated year-long trend chart within minutes — which is
 the product's activation moment. 90 days is configurable per plan if the
 backfill cost proves material.
 
-*On the split:* the Search Console API returns a **different row set per
-dimension combination**, and requesting a `query` dimension makes Google
+*On the split:* this is a **data-integrity invariant**, not an implementation
+preference.
+
+> Search Console dimensional datasets are never summed across incompatible
+> dimensions to produce site totals. Unsliced totals are stored separately as
+> the **reconciliation authority**; dimensional datasets are **analytical
+> subsets** whose missing-query share is explicitly represented.
+
+```
+gsc_totals_daily
+      │
+      ├── reconciliation authority — unsliced, matches the GSC UI exactly
+      │
+      ├── gsc_query_daily       ┐
+      ├── gsc_page_daily        ├── analytical dimensions,
+      └── gsc_query_page_daily  ┘   never summed for totals
+```
+
+The mechanism forcing it: the Search Console API returns a different row set
+per dimension combination, and requesting a `query` dimension makes Google
 withhold low-volume queries entirely — often 30–50% of clicks. A single
-`search_console_daily` table with query and page columns therefore cannot be
-populated by one request, and summing it never reconciles with the user's own
-Search Console UI. So: `gsc_daily_totals` (unsliced, reconciles exactly),
-`gsc_query_daily`, `gsc_page_daily`, and `gsc_query_page_daily` (top queries,
-90 days). The `gsc_anonymised_share` view exposes the gap so the UI explains it
-rather than the user discovering it. Proven by smoke tests 2 and 3.
+`search_console_daily` table therefore cannot be populated by one request, and
+summing it never reconciles with the customer's own Search Console.
+
+Stated this way so that a future developer collapsing these four tables back
+into one understands they are removing an invariant, not removing duplication.
+Smoke test 13 fails if `gsc_totals_daily` ever stops being independently
+fetched; tests 2 and 3 cover weighting and the anonymised gap.
 
 ## 10–12 Analytics and quotas
 

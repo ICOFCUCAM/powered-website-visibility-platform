@@ -52,7 +52,7 @@ declare t text;
 begin
     foreach t in array array[
         'websites','connections','connection_properties','website_connections',
-        'ga4_goal_events','sync_runs','gsc_daily_totals','gsc_query_daily',
+        'ga4_goal_events','sync_runs','gsc_totals_daily','gsc_query_daily',
         'gsc_page_daily','gsc_query_page_daily','ga4_daily','ga4_page_daily',
         'ga4_goal_daily','crawls','pages','page_snapshots','psi_samples',
         'issues','keywords','score_snapshots','plans','recommendations',

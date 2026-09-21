@@ -1,5 +1,10 @@
 # 09 — MVP build sequence
 
+> **Frozen — architectural source of truth.**
+> Changes to this document are architectural decisions, not edits. Amend it
+> deliberately, with the reason recorded in
+> [10-decisions.md](10-decisions.md).
+
 Ordered so that each milestone is demonstrable, the longest-lead external
 dependency starts first, and the AI arrives as an interpretation layer over
 accumulated evidence rather than a feature looking for something to say.
@@ -50,8 +55,20 @@ No unnecessary scopes. `webmasters.readonly` and `analytics.readonly` only;
 `business.manage` is not requested until phase 3, and asking for it early would
 widen the review surface for a feature that does not exist yet.
 
-*Done when:* verification is submitted, and every artefact above exists in the
-repository rather than in someone's head.
+**Also frozen in M0: what "verified" means.** Not the Google review — our own
+definition, because the policy documents above promise things about it:
+
+- `ownership_verified` and `crawl_allowed` are separate, and the second is
+  derived from the first plus the customer's own settings.
+- Search Console access alone is not ownership. The linked property must
+  *cover* the canonical URL — `app.property_covers_url()` — and be held as
+  `siteOwner` or `siteFullUser`. A domain property covers subdomains and any
+  scheme; a URL-prefix property covers neither.
+- DNS TXT or a file token is the fallback where no covering property exists.
+
+*Done when:* verification is submitted, every artefact above exists in the
+repository rather than in someone's head, and the ownership rules are
+implemented with tests rather than described.
 
 ## M1 — Foundation and Supabase
 
@@ -204,6 +221,11 @@ retrofittable without an awkward conversation.
 | 6 SEO engine | M6 |
 | 7 AI | M7 dashboard · M8 report · M9 assistant |
 | 8 Beta hardening | Launch readiness, parallel with M8–M9 |
+
+Phase 3's Business Profile work is decomposed so its external approval cannot
+idle unrelated engineering: submit the application now, and let approval and
+implementation follow on their own timeline while the rest of Phase 3 proceeds.
+See [11-expansion.md](11-expansion.md).
 
 ## Sequencing notes
 

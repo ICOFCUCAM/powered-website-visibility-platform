@@ -158,7 +158,7 @@ only yesterday — Google restates recent days, and data lags 2–3 days. Re-fet
 
 | Dataset | Dimensions | Window | Cadence |
 | --- | --- | --- | --- |
-| `gsc_daily_totals` | none | 16 months | daily |
+| `gsc_totals_daily` | none | 16 months | daily |
 | `gsc_query_daily` | date, query, country, device | 16 months | daily |
 | `gsc_page_daily` | date, page, country, device | 16 months | daily |
 | `gsc_query_page_daily` | date, query, page | trailing 90 days, top 1,000 queries | weekly |

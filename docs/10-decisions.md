@@ -1,5 +1,9 @@
 # 10 — Decisions
 
+> **Frozen — architectural source of truth.**
+> Changes to this document are architectural decisions, not edits. Amend it
+> deliberately, and record the reason in the table below.
+
 ## Locked
 
 These are settled. Changing one is a deliberate architectural decision with a

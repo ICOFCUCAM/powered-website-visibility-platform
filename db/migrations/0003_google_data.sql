@@ -18,8 +18,9 @@
 -- Search Console
 -- ---------------------------------------------------------------------------
 
--- Unsliced daily totals. Reconciles with what the user sees in the GSC UI.
-create table gsc_daily_totals (
+-- RECONCILIATION AUTHORITY. The only sanctioned source of site-level totals.
+-- Fetched unsliced, so it matches the Search Console UI exactly.
+create table gsc_totals_daily (
     organization_id      uuid not null,
     website_id     uuid not null references websites(id) on delete cascade,
     date        date not null,
@@ -29,8 +30,8 @@ create table gsc_daily_totals (
     primary key (website_id, date)
 );
 
--- Query-level rows. Partitioned monthly: this is the largest table in the
--- system for most tenants.
+-- ANALYTICAL SUBSET. Query-level rows, partitioned monthly: the largest table
+-- in the system for most tenants. Never sum this for a site total.
 create table gsc_query_daily (
     organization_id      uuid not null,
     website_id     uuid not null,
@@ -48,7 +49,7 @@ create table gsc_query_daily (
 create index on gsc_query_daily (website_id, query_hash, date);
 create index on gsc_query_daily (website_id, date) include (clicks, impressions);
 
--- Page-level rows.
+-- ANALYTICAL SUBSET. Page-level rows. Never sum this for a site total.
 create table gsc_page_daily (
     organization_id      uuid not null,
     website_id     uuid not null,
@@ -175,7 +176,7 @@ select
     case when t.clicks > 0
          then (t.clicks - coalesce(q.clicks, 0))::numeric / t.clicks end
                                          as anonymised_share
-from gsc_daily_totals t
+from gsc_totals_daily t
 left join (
     select website_id, date, sum(clicks) as clicks
     from gsc_query_daily

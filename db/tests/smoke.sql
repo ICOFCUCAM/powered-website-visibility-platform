@@ -79,7 +79,7 @@ end $$;
 -- 3. The anonymised-clicks gap is visible rather than silently inconsistent.
 --    Site total says 100 clicks; query rows only account for 40.
 -- ---------------------------------------------------------------------------
-insert into gsc_daily_totals (organization_id, website_id, date, clicks, impressions, position)
+insert into gsc_totals_daily (organization_id, website_id, date, clicks, impressions, position)
 values ('11111111-1111-1111-1111-111111111111','5117e000-0000-0000-0000-00000000000a',
         current_date - 1, 100, 5000, 8.4);
 
@@ -114,7 +114,10 @@ declare leased int; still_pending int;
 begin
     with lease as (
         update crawl_frontier f
-        set state = 'leased', leased_until = now() + interval '5 minutes',
+        set state = 'leased',
+            worker_id = 'worker-a',
+            leased_at = now(),
+            lease_expires_at = now() + interval '5 minutes',
             attempts = attempts + 1
         where (f.crawl_id, f.url_hash) in (
             select crawl_id, url_hash from crawl_frontier
@@ -132,12 +135,14 @@ begin
         raise exception 'FRONTIER FAIL: leased %, pending %', leased, still_pending;
     end if;
 
-    -- Simulate a killed worker: its lease expires and the row is reclaimable.
-    update crawl_frontier set leased_until = now() - interval '1 minute'
+    -- worker-a dies. Its lease expires. The sweeper reclaims the rows WITHOUT
+    -- consulting worker_id — recovery must never depend on knowing anything
+    -- about the dead worker.
+    update crawl_frontier set lease_expires_at = now() - interval '1 minute'
      where crawl_id = 'c0000000-0000-0000-0000-00000000000c' and state = 'leased';
-    update crawl_frontier set state = 'pending'
+    update crawl_frontier set state = 'pending', worker_id = null
      where crawl_id = 'c0000000-0000-0000-0000-00000000000c'
-       and state = 'leased' and leased_until < now();
+       and state = 'leased' and lease_expires_at < now();
 
     select count(*) into still_pending from crawl_frontier
      where crawl_id = 'c0000000-0000-0000-0000-00000000000c' and state = 'pending';
@@ -145,6 +150,28 @@ begin
         raise exception 'RECLAIM FAIL: expected 3 pending, got %', still_pending;
     end if;
     raise notice 'PASS  frontier leased 2 of 3, and a dead lease was reclaimed';
+end $$;
+
+-- A different worker can now claim what worker-a was holding.
+do $$
+declare claimed int;
+begin
+    with lease as (
+        update crawl_frontier f
+        set state = 'leased', worker_id = 'worker-b', leased_at = now(),
+            lease_expires_at = now() + interval '5 minutes'
+        where (f.crawl_id, f.url_hash) in (
+            select crawl_id, url_hash from crawl_frontier
+            where crawl_id = 'c0000000-0000-0000-0000-00000000000c'
+              and state = 'pending'
+            order by depth, url_hash limit 3
+            for update skip locked)
+        returning 1)
+    select count(*) into claimed from lease;
+    if claimed <> 3 then
+        raise exception 'RECOVERY FAIL: worker-b claimed % of 3', claimed;
+    end if;
+    raise notice 'PASS  worker-b claimed all 3 without worker-a recovering';
 end $$;
 
 -- ---------------------------------------------------------------------------
@@ -317,4 +344,88 @@ begin
     end if;
     raise notice 'PASS  score of 76 traces to source=%, version=%, crawl=%',
                  src, ver, frm->>'crawl_id';
+end $$;
+
+-- ---------------------------------------------------------------------------
+-- 11. Search Console access is not generic ownership. A property covers a URL
+--     or it does not, and the difference between a domain property and a
+--     URL-prefix property is exactly where a naive check goes wrong.
+-- ---------------------------------------------------------------------------
+do $$
+declare
+    cases text[][] := array[
+        -- property_uri,                 url,                              expected
+        array['sc-domain:example.com',   'https://www.example.com/about',  'true' ],
+        array['sc-domain:example.com',   'http://blog.example.com/',       'true' ],
+        array['sc-domain:example.com',   'https://example.com',            'true' ],
+        array['sc-domain:example.com',   'https://notexample.com/',        'false'],
+        array['sc-domain:example.com',   'https://example.com.evil.net/',  'false'],
+        array['https://www.example.com/','https://www.example.com/about',  'true' ],
+        array['https://www.example.com/','https://www.example.com',        'true' ],
+        array['https://www.example.com/','http://www.example.com/about',   'false'],
+        array['https://www.example.com/','https://blog.example.com/',      'false'],
+        array['https://www.example.com/','https://example.com/',           'false'],
+        array['https://example.com/shop/','https://example.com/about',     'false']
+    ];
+    i int;
+    got boolean;
+    want boolean;
+begin
+    for i in 1 .. array_length(cases, 1) loop
+        got  := app.property_covers_url(cases[i][1], cases[i][2]);
+        want := cases[i][3]::boolean;
+        if got is distinct from want then
+            raise exception 'COVERAGE FAIL: % vs % gave %, expected %',
+                cases[i][1], cases[i][2], got, want;
+        end if;
+    end loop;
+    raise notice 'PASS  property coverage correct across % cases (www, scheme, subdomain, suffix-spoof, path)',
+                 array_length(cases, 1);
+end $$;
+
+-- ---------------------------------------------------------------------------
+-- 12. A property the user can merely see is not ownership evidence, and a
+--     covering property held as owner is.
+-- ---------------------------------------------------------------------------
+do $$
+declare sufficient boolean; covers boolean;
+begin
+    select is_sufficient_evidence, covers_canonical_url into sufficient, covers
+      from website_ownership_evidence
+     where website_id = '5117e000-0000-0000-0000-00000000000a';
+
+    -- The fixture links sc-domain:example.com with no permission_level set,
+    -- so coverage holds but evidence does not.
+    if covers is not true then
+        raise exception 'EVIDENCE FAIL: expected sc-domain:example.com to cover the canonical URL';
+    end if;
+    if sufficient is not false then
+        raise exception 'EVIDENCE FAIL: a property with no owner permission was accepted as evidence';
+    end if;
+
+    update connection_properties set permission_level = 'siteOwner'
+     where id = '9e000000-0000-0000-0000-000000000001';
+
+    select is_sufficient_evidence into sufficient
+      from website_ownership_evidence
+     where website_id = '5117e000-0000-0000-0000-00000000000a';
+    if sufficient is not true then
+        raise exception 'EVIDENCE FAIL: siteOwner on a covering property was rejected';
+    end if;
+    raise notice 'PASS  ownership requires a COVERING property held as owner, not mere access';
+end $$;
+
+-- ---------------------------------------------------------------------------
+-- 13. gsc_totals_daily is a real table, not a view over the dimensional ones.
+--     If a future migration "simplifies" it away, this fails loudly.
+-- ---------------------------------------------------------------------------
+do $$
+begin
+    if not exists (
+        select 1 from information_schema.tables
+         where table_name = 'gsc_totals_daily' and table_type = 'BASE TABLE'
+    ) then
+        raise exception 'RECONCILIATION FAIL: gsc_totals_daily must remain an independently fetched table';
+    end if;
+    raise notice 'PASS  reconciliation authority is stored, never derived from dimensional rows';
 end $$;

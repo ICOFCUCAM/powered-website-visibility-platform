@@ -39,22 +39,40 @@ create index on crawls (status) where status in ('queued','running');
 -- is resumable and idempotent by construction: workers lease rows with
 -- SELECT ... FOR UPDATE SKIP LOCKED, and a killed worker's lease simply expires.
 -- A crawl that dies at page 400 of 500 resumes at 400, never at 1.
+--
+-- RECOVERY INVARIANT:
+--
+--   A URL whose lease expires becomes eligible for another worker WITHOUT
+--   requiring the original worker to recover.
+--
+-- That is the guarantee worth stating — "the crawler uses Postgres" is not.
+-- It means worker death is a non-event: no supervisor has to detect it, no
+-- peer has to hand off, and no in-flight URL is lost. A sweeper flips expired
+-- leases back to 'pending' and any worker picks them up.
 create table crawl_frontier (
     crawl_id        uuid  not null references crawls(id) on delete cascade,
     url_hash        bytea not null,
     url             text  not null,
     depth           int   not null default 0,
     discovered_from bytea,
+    discovered_at   timestamptz not null default now(),
     state           text  not null default 'pending'
                           check (state in ('pending','leased','done','failed','skipped')),
     skip_reason     text,
-    leased_until    timestamptz,
-    attempts        int   not null default 0,
+    -- Lease bookkeeping. worker_id is diagnostic only: reclaiming an expired
+    -- lease never consults it, because that would make recovery depend on
+    -- knowing something about the dead worker.
+    worker_id         text,
+    leased_at         timestamptz,
+    lease_expires_at  timestamptz,
+    attempts          int   not null default 0,
+    last_error        text,
     primary key (crawl_id, url_hash)
 );
 -- The lease query's index. Partial, so it stays small as the crawl drains.
 create index on crawl_frontier (crawl_id, depth) where state = 'pending';
-create index on crawl_frontier (leased_until) where state = 'leased';
+-- The sweeper's index: find expired leases regardless of which worker held them.
+create index on crawl_frontier (lease_expires_at) where state = 'leased';
 
 -- Stable per-URL identity across every crawl of a website.
 create table pages (

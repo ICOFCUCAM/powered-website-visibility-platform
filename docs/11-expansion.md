@@ -35,7 +35,7 @@ else was left out.
 | Not in V1 (§42) | Seam | Already exists | Still needed |
 | --- | --- | --- | --- |
 | Google Ads management | connection + action | `provider_services` row, `ads.budget.update` capability marked `destructive` | Ads API client, approval UI, spend guardrails |
-| Business Profile management | connection + action | `business_profile` service row, three GBP capabilities, `connection_properties.geo`, `maps` surface | **GBP API approval** (separate application, slow), client, post/review UI |
+| Business Profile management | connection + action | `business_profile` service row, three GBP capabilities, `connection_properties.geo`, `maps` surface | **GBP API approval** (separate application, slow), client, post/review UI — sequenced so it cannot block the rest of Phase 3 |
 | Automated backlink acquisition | — | nothing, deliberately | Nothing. Outreach *suggestions* fit the data-provider seam; automated acquisition is not a product this platform should have |
 | Proprietary internet-wide traffic estimates | data providers + corpus | `external_metrics.is_modelled`, `index` corpus | A corpus, a model, and an honest confidence interval |
 | Massive web crawler | crawl corpus | `corpus` column, versioned extraction documents in object storage, per-host politeness budget | A different store (columnar, not Postgres), distributed frontier, far larger politeness infrastructure |
@@ -54,6 +54,30 @@ the eleven — the versioned extraction document means a future index can be bui
 by replaying extraction over a different corpus, but the store, the frontier and
 the politeness infrastructure are all genuinely new work. That is the correct
 conclusion: it is a different company, not a feature.
+
+## Business Profile is sequenced, not scheduled
+
+Its API approval is a separate application with its own eligibility bar, and
+neither the timing nor the outcome is ours to control. So it is decomposed, and
+only the first step is ours to do now:
+
+```
+Phase 3
+ ├── Business Profile
+ │     ├── application submitted   ← start now, it is the long pole
+ │     ├── approval                ← external, unknown duration
+ │     └── implementation          ← begins when approval lands
+ │
+ └── every other Phase 3 capability
+       AI-search visibility · WordPress · alerts · agency dashboards
+       ↑ none of these depend on GBP approval
+```
+
+An external approval delay must not idle unrelated engineering. Until approval
+lands, GBP exists only as the generic connection and property seams that are
+already there — a `provider_services` row and three disabled capabilities. It
+gets **no dedicated V1 Hub UI and no bespoke data model**; the Hub screen
+renders it as "coming soon" rather than a button that fails.
 
 ## What makes empty tables safe
 

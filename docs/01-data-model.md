@@ -39,7 +39,7 @@ belongs to exactly one:
 deleted outside retention policy. These are the history the product sells.
 
 ```
-gsc_daily_totals      gsc_query_daily       gsc_page_daily
+gsc_totals_daily      gsc_query_daily       gsc_page_daily
 gsc_query_page_daily  ga4_daily             ga4_page_daily
 ga4_dimension_daily   ga4_goal_daily        page_snapshots
 issue_observations    score_snapshots       backlink_changes
@@ -136,7 +136,7 @@ over the ability to read a customer's Google account.
 
 ### 4. GSC query rows do not sum to GSC totals — the schema says so
 
-`gsc_daily_totals` is fetched unsliced. `gsc_query_daily` is fetched with a
+`gsc_totals_daily` is fetched unsliced. `gsc_query_daily` is fetched with a
 query dimension, which causes Google to withhold low-volume queries entirely —
 commonly 30–50% of clicks. They are different tables on purpose, and
 `gsc_anonymised_share` exposes the gap so the UI can explain it. Deriving website

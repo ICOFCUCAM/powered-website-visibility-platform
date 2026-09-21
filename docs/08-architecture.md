@@ -1,5 +1,10 @@
 # 08 — Repository structure and deployment
 
+> **Frozen — architectural source of truth.**
+> Changes to this document are architectural decisions, not edits. Amend it
+> deliberately, with the reason recorded in
+> [10-decisions.md](10-decisions.md).
+
 One repository. Two runtimes, because the split is justified: the analysis and
 crawl work is genuinely Python-shaped, and the product surface is genuinely
 React-shaped. The boundary is the HTTP API — never a second implementation of

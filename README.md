@@ -25,11 +25,18 @@ describes.
 | [05-analysis-scoring.md](docs/05-analysis-scoring.md) | Issue catalogue, fingerprints, scoring model |
 | [06-ai-layer.md](docs/06-ai-layer.md) | Prompts, model routing, grounding rules, cost control |
 | [07-ui.md](docs/07-ui.md) | Screen-by-screen specification |
-| [08-structure.md](docs/08-structure.md) | Repository layout, services, deployment |
-| [09-mvp-sequence.md](docs/09-mvp-sequence.md) | Build order with acceptance criteria |
-| [10-decisions.md](docs/10-decisions.md) | Locked decisions, and the ones still open |
+| [08-architecture.md](docs/08-architecture.md) | **Frozen.** Repository layout, module boundaries, services, deployment |
+| [09-mvp-sequence.md](docs/09-mvp-sequence.md) | **Frozen.** Build order with acceptance criteria |
+| [10-decisions.md](docs/10-decisions.md) | **Frozen.** Locked decisions, and the ones still open |
 | [11-expansion.md](docs/11-expansion.md) | Seams for everything deliberately not in V1 |
-| [12-v1-conformance.md](docs/12-v1-conformance.md) | Section-by-section against the V1 spec |
+| [12-v1-conformance.md](docs/12-v1-conformance.md) | **Frozen.** Section-by-section against the V1 spec |
+
+## Architectural source of truth
+
+Four documents are frozen. Changing one is an architectural decision, recorded
+with its reason, not an edit:
+
+`08-architecture.md` · `09-mvp-sequence.md` · `10-decisions.md` · `12-v1-conformance.md`
 
 ## Verifying the schema
 
@@ -49,6 +56,10 @@ PASS  enabled score weights total 1.00 with 2 component(s) awaiting a data sourc
 PASS  standing approval restricted to reversible capabilities
 PASS  every derived table carries source, derived_from and a calculation version
 PASS  score of 76 traces to source=derived, version=1.0.0, crawl=c0000000-…
+PASS  worker-b claimed all 3 without worker-a recovering
+PASS  property coverage correct across 11 cases (www, scheme, subdomain, suffix-spoof, path)
+PASS  ownership requires a COVERING property held as owner, not mere access
+PASS  reconciliation authority is stored, never derived from dimensional rows
 ```
 
 Each test exercises a claim the design depends on rather than the ORM's ability
