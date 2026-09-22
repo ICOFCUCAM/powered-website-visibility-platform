@@ -132,8 +132,20 @@ acceptable thing to accept.
 
 ## Vercel, specifically
 
-- **Set the root directory to `web/`.** The repository root has a
-  `pyproject.toml` and Vercel's autodetection will otherwise guess Python.
+- **Set the root directory to `web/`. This is not a preference.** Vercel
+  treats a top-level `api/` directory as Serverless Functions, and this
+  repository root has one containing the entire FastAPI application.
+  `api/main.py` exports `app`, a real ASGI application, so Vercel's Python
+  runtime will deploy and invoke it — and it dies on import, because
+  `get_settings()` refuses to start without `JWT_SECRET` and `DATABASE_URL`.
+
+  **The symptom is `500 FUNCTION_INVOCATION_FAILED` on every path**, with a
+  Python traceback in the function logs ending in
+  `ConfigError: JWT_SECRET is required but not set`. Nothing is wrong with
+  the code at that point: the config module is doing exactly its job, in a
+  place it was never meant to be deployed. Pointing the root directory at
+  `web/` makes the `api/` directory invisible to Vercel and the problem
+  disappears.
 - **`NEXT_PUBLIC_API_BASE_URL` is a build-time value**, inlined into the
   bundle by `next.config.ts`. Changing it needs a redeploy, not an environment
   edit. Set it to the API's origin *including* the version prefix:
