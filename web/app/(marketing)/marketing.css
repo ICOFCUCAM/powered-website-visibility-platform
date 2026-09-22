@@ -106,7 +106,7 @@ body:has(.mk) { background: #07090b; }
 .mk-scan-note[role="alert"] { color: #e8a0a0; }
 
 /* --- the screen when it is showing a real scan --------------------------- */
-.mk-app.is-running { opacity: .55; transition: opacity .2s ease; }
+.mk-app.is-running { opacity: .8; transition: opacity .2s ease; }
 .mk-live {
   flex: none; font-family: var(--mono); font-size: 8.5px; letter-spacing: .1em;
   text-transform: uppercase; color: var(--mk-teal);
@@ -114,6 +114,67 @@ body:has(.mk) { background: #07090b; }
   padding: 3px 8px; white-space: nowrap;
 }
 .mk-ops--found { border-top: 0; padding-top: 0; }
+
+/* --- the screen is alive -------------------------------------------------- */
+/* Every rule below is decoration. Under reduced motion none of it runs and
+   the screen shows the same information, held still. */
+
+/* The activity line on the example card. */
+.mk-activity { margin-bottom: 12px; }
+.mk-activity p {
+  margin: 0 0 4px; font-family: var(--mono); font-size: 8.5px;
+  letter-spacing: .13em; text-transform: uppercase; color: var(--mk-muted);
+}
+.mk-spark { display: block; width: 100%; height: 42px; overflow: visible; }
+.mk-spark-head { fill: #eaf7f3; }
+
+/* The "live" badge's heartbeat. */
+.mk-live { display: inline-flex; align-items: center; gap: 6px; }
+.mk-dot {
+  position: relative; width: 5px; height: 5px; border-radius: 50%;
+  background: var(--mk-teal); flex: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  /* The ring fills as the number counts, driven by the same --v. */
+  .mk-ring { transition: background .12s linear; }
+
+  /* A signal travelling the activity line. */
+  .mk-spark-line {
+    stroke-dasharray: 460; stroke-dashoffset: 460;
+    animation: mk-draw 1.6s cubic-bezier(.16,1,.3,1) .3s forwards;
+  }
+  .mk-spark-pulse { animation: mk-travel 3s linear infinite; opacity: .85; }
+  .mk-spark-head { animation: mk-beat 2.2s ease-in-out infinite; }
+
+  /* The heartbeat: a ring expanding out of the dot and fading. */
+  .mk-dot::after {
+    content: ""; position: absolute; inset: 0; border-radius: 50%;
+    background: var(--mk-teal);
+    animation: mk-ping 2s cubic-bezier(0,0,.2,1) infinite;
+  }
+
+  /* Findings arrive one at a time, the way a scan reports them. */
+  .mk-arrive li {
+    opacity: 0; transform: translateY(6px);
+    animation: mk-arrive .5s cubic-bezier(.16,1,.3,1) forwards;
+    animation-delay: calc(var(--i) * 90ms);
+  }
+
+  /* While a scan runs, the screen reads as working rather than disabled. */
+  .mk-app.is-running .mk-main { animation: mk-breathe 1.4s ease-in-out infinite; }
+}
+
+@keyframes mk-draw { to { stroke-dashoffset: 0; } }
+@keyframes mk-travel { to { stroke-dashoffset: -80; } }
+@keyframes mk-beat { 50% { r: 3.6; opacity: .65; } }
+@keyframes mk-ping {
+  0%   { transform: scale(1);   opacity: .7; }
+  70%  { transform: scale(3.2); opacity: 0; }
+  100% { transform: scale(3.2); opacity: 0; }
+}
+@keyframes mk-arrive { to { opacity: 1; transform: none; } }
+@keyframes mk-breathe { 50% { opacity: .62; } }
 .mk-clean { margin: 0; font-size: 12.5px; color: var(--mk-teal); }
 .mk-more {
   margin-top: auto; padding-top: 12px; font-family: var(--mono);

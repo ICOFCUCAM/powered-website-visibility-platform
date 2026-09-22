@@ -3,6 +3,8 @@
 import type { PeekResult } from "@/lib/api";
 
 import { CLEAN, readable } from "./findings";
+import { Spark } from "./Spark";
+import { useCountUp } from "./useCountUp";
 
 const PILLARS = [
   ["Search", 78],
@@ -87,7 +89,10 @@ export function Screen({
                       </p>
                     </div>
                     {result ? (
-                      <span className="mk-live">Live · your site</span>
+                      <span className="mk-live">
+                        <i className="mk-dot" aria-hidden="true" />
+                        Live · your site
+                      </span>
                     ) : (
                       <span className="mk-sample">Example — not real data</span>
                     )}
@@ -103,9 +108,9 @@ export function Screen({
                       {found.length === 0 ? (
                         <p className="mk-clean">{CLEAN}</p>
                       ) : (
-                        <ol>
+                        <ol className="mk-arrive">
                           {found.slice(0, 6).map((f, i) => (
-                            <li key={f.key}>
+                            <li key={f.key} style={{ "--i": i } as React.CSSProperties}>
                               <em>{i + 1}</em> {f.title}
                               <span className="mk-tag">{f.pillar}</span>
                             </li>
@@ -120,25 +125,18 @@ export function Screen({
                   ) : (
                     <>
                       <div className="mk-main-top">
-                        <div className="mk-ring">
-                          <div className="mk-ring-label">
-                            <b>72</b>
-                            <span>Visibility</span>
-                          </div>
-                        </div>
+                        <Ring value={72} />
                         <div className="mk-cards">
-                          {PILLARS.map(([label, value]) => (
-                            <div key={label} className="mk-mini">
-                              <span>{label}</span>
-                              <em>
-                                <b>{value}</b>
-                                <i>/ 100</i>
-                              </em>
-                            </div>
+                          {PILLARS.map(([label, value], i) => (
+                            <Mini key={label} label={label} value={value} index={i} />
                           ))}
                         </div>
                       </div>
                       <div className="mk-ops">
+                        <div className="mk-activity">
+                          <p>Activity</p>
+                          <Spark />
+                        </div>
                         <p>This week&rsquo;s plan</p>
                         <ol>
                           {EXAMPLE_PLAN.map(([text, pillar], i) => (
@@ -157,6 +155,35 @@ export function Screen({
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+/** The score, counting up and sweeping the ring as it goes. */
+function Ring({ value }: { value: number }) {
+  const shown = useCountUp(value, 1500, 250);
+  return (
+    <div className="mk-ring" style={{ "--v": shown } as React.CSSProperties}>
+      <div className="mk-ring-label">
+        <b>{shown}</b>
+        <span>Visibility</span>
+      </div>
+    </div>
+  );
+}
+
+/** One component's score. Staggered, so the four do not land together. */
+function Mini({
+  label, value, index,
+}: { label: string; value: number; index: number }) {
+  const shown = useCountUp(value, 1100, 400 + index * 110);
+  return (
+    <div className="mk-mini">
+      <span>{label}</span>
+      <em>
+        <b>{shown}</b>
+        <i>/ 100</i>
+      </em>
     </div>
   );
 }
