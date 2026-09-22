@@ -16,8 +16,12 @@ from forge.domain.models import (
     Domain,
     EnvTarget,
     EnvVar,
+    JobRun,
+    JobStatus,
     LogLine,
     LogStream,
+    Process,
+    ProcessType,
     Project,
 )
 
@@ -102,3 +106,54 @@ def domain(host: str = "example.com", *, verified: bool = True, primary: bool = 
 
 def log_line(seq: int, line: str, stream: LogStream = LogStream.BUILD) -> LogLine:
     return LogLine(seq=seq, stream=stream, line=line, at=NOW)
+
+
+def process(**kwargs) -> Process:
+    base = dict(
+        id=UUID("22222222-2222-2222-2222-222222222222"),
+        project_id=UUID("11111111-1111-1111-1111-111111111111"),
+        name="mailer",
+        type=ProcessType.WORKER,
+        command="node worker.js",
+        schedule=None,
+        memory_mb=256,
+        replicas=1,
+        timeout_seconds=900,
+        enabled=True,
+        created_at=NOW,
+        updated_at=NOW,
+    )
+    base.update(kwargs)
+    return Process(**base)
+
+
+def cron(**kwargs) -> Process:
+    return process(
+        **{
+            "id": UUID("33333333-3333-3333-3333-333333333333"),
+            "name": "nightly",
+            "type": ProcessType.CRON,
+            "command": "node cleanup.js",
+            "schedule": "0 3 * * *",
+            **kwargs,
+        }
+    )
+
+
+def job_run(**kwargs) -> JobRun:
+    base = dict(
+        id=uuid4(),
+        process_id=UUID("33333333-3333-3333-3333-333333333333"),
+        deployment_id=None,
+        scheduled_for=NOW,
+        status=JobStatus.SUCCEEDED,
+        exit_code=0,
+        detail=None,
+        output="removed 412 expired sessions",
+        container_id=None,
+        created_at=NOW,
+        started_at=NOW,
+        finished_at=NOW + timedelta(seconds=3),
+    )
+    base.update(kwargs)
+    return JobRun(**base)

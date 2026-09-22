@@ -52,6 +52,35 @@ class EnvTarget(StrEnum):
         return self is EnvTarget.ALL or self is other
 
 
+class ProcessType(StrEnum):
+    WEB = "web"
+    WORKER = "worker"
+    CRON = "cron"
+
+    @property
+    def is_long_running(self) -> bool:
+        """Whether this process wants a container that stays up.
+
+        Cron is the exception: its container is created per slot, runs once
+        and is removed, so nothing about it is reconciled against "should be
+        running right now".
+        """
+        return self in {ProcessType.WEB, ProcessType.WORKER}
+
+
+class JobStatus(StrEnum):
+    PENDING = "pending"
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    TIMED_OUT = "timed_out"
+    SKIPPED = "skipped"
+
+    @property
+    def is_terminal(self) -> bool:
+        return self not in {JobStatus.PENDING, JobStatus.RUNNING}
+
+
 class LogStream(StrEnum):
     SYSTEM = "system"
     BUILD = "build"
@@ -144,3 +173,58 @@ class LogLine:
     stream: LogStream
     line: str
     at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class Process:
+    """Something a project runs besides its website.
+
+    Built from the same image as the deployment, so a worker and the web app
+    are running the same code by construction rather than by anyone
+    remembering to deploy both.
+    """
+
+    id: UUID
+    project_id: UUID
+    name: str
+    type: ProcessType
+    #: None means the image's own CMD.
+    command: str | None
+    #: Five-field cron in UTC, and only ever set on a cron process.
+    schedule: str | None
+    memory_mb: int
+    replicas: int
+    timeout_seconds: int
+    enabled: bool
+    created_at: datetime
+    updated_at: datetime
+
+    @property
+    def runs_on_a_schedule(self) -> bool:
+        return self.type is ProcessType.CRON and self.schedule is not None
+
+
+@dataclass(frozen=True, slots=True)
+class JobRun:
+    """One execution of a cron process, identified by the slot it claimed."""
+
+    id: UUID
+    process_id: UUID
+    deployment_id: UUID | None
+    #: The minute the schedule named — not the minute the container started.
+    #: A run that began four minutes late is still that slot's run.
+    scheduled_for: datetime
+    status: JobStatus
+    exit_code: int | None
+    detail: str | None
+    output: str | None
+    container_id: str | None
+    created_at: datetime
+    started_at: datetime | None
+    finished_at: datetime | None
+
+    @property
+    def duration_seconds(self) -> float | None:
+        if not self.started_at or not self.finished_at:
+            return None
+        return (self.finished_at - self.started_at).total_seconds()

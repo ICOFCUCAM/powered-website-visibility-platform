@@ -17,11 +17,12 @@ from forge.adapters import containers, crypto, db
 from forge.config import ConfigError, Settings, get_settings
 from forge.domain import naming
 from forge.domain.errors import ForgeError
-from forge.domain.models import DeploymentTrigger, EnvTarget
+from forge.domain.models import DeploymentTrigger, EnvTarget, ProcessType
 from forge.engine import promote as promote_engine
 from forge.engine import service, verify
 from forge.engine.logs import LogWriter
 from forge.repositories import deployments as deployment_repo
+from forge.repositories import processes as process_repo
 from forge.repositories import projects as project_repo
 
 MIGRATIONS = Path(__file__).resolve().parent.parent / "db" / "migrations"
@@ -252,6 +253,121 @@ async def cmd_domain_verify(args: argparse.Namespace, settings: Settings) -> Non
     print(await routing.refresh(await project_repo.get(project.id), settings=settings))
 
 
+async def cmd_process_add(args: argparse.Namespace, settings: Settings) -> None:
+    from forge.domain.schedule import InvalidSchedule, describe, parse
+
+    project = await project_repo.resolve(args.project)
+    kind = ProcessType(args.type)
+
+    schedule = None
+    if kind is ProcessType.CRON:
+        if not args.schedule:
+            raise ForgeError("A scheduled job needs --schedule, e.g. '0 3 * * *'")
+        try:
+            parsed = parse(args.schedule)
+        except InvalidSchedule as exc:
+            raise ForgeError(str(exc)) from exc
+        schedule = parsed.expression
+    elif args.schedule:
+        raise ForgeError(
+            f"A {kind.value} process runs continuously, so --schedule would be "
+            "ignored. Use --type cron, or drop it."
+        )
+
+    process = await process_repo.create(
+        project_id=project.id,
+        name=args.name,
+        type=kind,
+        command=args.command,
+        schedule=schedule,
+        memory_mb=args.memory,
+        replicas=args.replicas,
+        timeout_seconds=args.timeout,
+    )
+    print(f"added {process.name} ({process.type.value})")
+    if schedule:
+        print(f"  schedule  {schedule} — {describe(parse(schedule))}")
+        print("  runs against whatever is serving production")
+    else:
+        print("  starts on the next deploy or promotion")
+
+
+async def cmd_process_list(args: argparse.Namespace, settings: Settings) -> None:
+    from forge.engine.processes import next_due
+
+    project = await project_repo.resolve(args.project)
+    found = await process_repo.list_for_project(project.id)
+    if not found:
+        print("no workers or scheduled jobs — forge process add …")
+        return
+
+    for process in found:
+        state = "" if process.enabled else " [paused]"
+        last = await process_repo.last_run(process.id)
+        detail = process.schedule or f"{process.replicas}x"
+        print(f"{process.name:20} {process.type.value:8} {detail:16}{state}")
+        if process.command:
+            print(f"  command   {process.command}")
+        upcoming = next_due(process) if process.enabled else None
+        if upcoming:
+            print(f"  next      {upcoming:%d %b %H:%M} UTC")
+        if last:
+            took = ""
+            if last.duration_seconds:
+                took = f" in {last.duration_seconds:.1f}s"
+            when = f"{last.scheduled_for:%d %b %H:%M}"
+            print(f"  last      {last.status.value} at {when}{took}")
+
+
+async def cmd_process_rm(args: argparse.Namespace, settings: Settings) -> None:
+    project = await project_repo.resolve(args.project)
+    process = await process_repo.get_by_name(project.id, args.name)
+    await process_repo.delete(process.id)
+    print(f"removed {args.name} — its container goes on the next promotion")
+
+
+async def cmd_process_run(args: argparse.Namespace, settings: Settings) -> None:
+    """Queue a scheduled job outside its schedule.
+
+    Takes the current minute's slot, so triggering one seconds before it was
+    going to fire anyway produces a single run rather than two.
+    """
+    from datetime import UTC, datetime
+
+    project = await project_repo.resolve(args.project)
+    process = await process_repo.get_by_name(project.id, args.name)
+    if process.type is not ProcessType.CRON:
+        raise ForgeError(f"{args.name} runs continuously — there is nothing to trigger")
+
+    slot = datetime.now(UTC).replace(second=0, microsecond=0)
+    run = await process_repo.claim_slot(
+        process.id, slot, project.production_deployment_id
+    )
+    if run is None:
+        raise ForgeError("Already queued or running for this minute")
+    print(f"queued {args.name} for {slot:%H:%M} UTC — starts within seconds")
+
+
+async def cmd_runs(args: argparse.Namespace, settings: Settings) -> None:
+    project = await project_repo.resolve(args.project)
+    process = await process_repo.get_by_name(project.id, args.name)
+    runs = await process_repo.list_runs(process.id, limit=args.limit)
+    if not runs:
+        print(f"{args.name} has not run yet")
+        return
+
+    for run in runs:
+        took = f"{run.duration_seconds:.1f}s" if run.duration_seconds else "—"
+        print(
+            f"{run.scheduled_for:%d %b %H:%M} UTC  {run.status.value:10} "
+            f"{took:>8}  {run.detail or ''}"
+        )
+    if args.output and runs[0].output:
+        print()
+        print(f"--- output of the most recent run ({runs[0].status.value}) ---")
+        print(runs[0].output)
+
+
 async def cmd_webhook(args: argparse.Namespace, settings: Settings) -> None:
     project = await project_repo.resolve(args.project)
     print(f"Payload URL   {settings.scheme}://<your forge host>/webhooks/{project.slug}")
@@ -390,6 +506,48 @@ def _parser() -> argparse.ArgumentParser:
     domain_verify.add_argument("project")
     domain_verify.add_argument("host")
     domain_verify.set_defaults(handler=cmd_domain_verify)
+
+    process = sub.add_parser(
+        "process", help="manage workers and scheduled jobs"
+    ).add_subparsers()
+    proc_add = process.add_parser("add")
+    proc_add.add_argument("project")
+    proc_add.add_argument("name")
+    proc_add.add_argument(
+        "--type",
+        choices=["worker", "cron"],
+        required=True,
+        help="worker runs continuously; cron runs on a schedule",
+    )
+    proc_add.add_argument("--command", help="default: the image's own command")
+    proc_add.add_argument("--schedule", help="five-field cron in UTC, e.g. '0 3 * * *'")
+    proc_add.add_argument("--memory", type=int, default=512)
+    proc_add.add_argument("--replicas", type=int, default=1)
+    proc_add.add_argument("--timeout", type=int, default=900)
+    proc_add.set_defaults(handler=cmd_process_add)
+    proc_list = process.add_parser("list")
+    proc_list.add_argument("project")
+    proc_list.set_defaults(handler=cmd_process_list)
+    proc_rm = process.add_parser("rm")
+    proc_rm.add_argument("project")
+    proc_rm.add_argument("name")
+    proc_rm.set_defaults(handler=cmd_process_rm)
+    proc_run = process.add_parser("run", help="trigger a scheduled job now")
+    proc_run.add_argument("project")
+    proc_run.add_argument("name")
+    proc_run.set_defaults(handler=cmd_process_run)
+
+    runs = sub.add_parser("runs", help="a scheduled job's recent runs")
+    runs.add_argument("project")
+    runs.add_argument("name")
+    runs.add_argument("--limit", type=int, default=20)
+    runs.add_argument(
+        "--output",
+        "-o",
+        action="store_true",
+        help="also print the most recent run's output",
+    )
+    runs.set_defaults(handler=cmd_runs)
 
     webhook = sub.add_parser("webhook", help="print a project's webhook settings")
     webhook.add_argument("project")

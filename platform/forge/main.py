@@ -18,7 +18,7 @@ from fastapi.staticfiles import StaticFiles
 from forge.adapters import db
 from forge.config import get_settings
 from forge.domain.errors import ForgeError
-from forge.routers import deployments, health, projects, webhooks
+from forge.routers import deployments, health, processes, projects, webhooks
 from forge.web import routes as dashboard
 
 logger = logging.getLogger("forge")
@@ -65,6 +65,8 @@ app.include_router(health.router)
 app.include_router(projects.router)
 app.include_router(deployments.project_router)
 app.include_router(deployments.router)
+app.include_router(processes.project_router)
+app.include_router(processes.router)
 app.include_router(webhooks.router)
 # Last, because it owns the root path and its routes are the least specific.
 app.include_router(dashboard.router)

@@ -335,3 +335,189 @@ async def _capture(args: list[str], *, timeout: int = 120) -> str:
             f"{stderr.decode(errors='replace').strip()}"
         )
     return stdout.decode(errors="replace")
+
+
+# ---------------------------------------------------------------------------
+# Processes: workers and one-shot jobs
+# ---------------------------------------------------------------------------
+
+PROCESS_LABEL = "forge.process"
+ROLE_LABEL = "forge.role"
+
+#: How much of a job's output to keep. Enough to diagnose a failure, bounded
+#: so a job that prints a megabyte a second cannot fill the database. The tail
+#: is kept rather than the head: the traceback is at the end.
+MAX_OUTPUT_BYTES = 64_000
+
+
+@dataclass(frozen=True, slots=True)
+class TaskSpec:
+    """A container that is not a website.
+
+    Shares the deployment's image, and deliberately carries no Traefik labels
+    at all — a queue consumer with a public hostname is a mistake waiting to
+    be found by a crawler.
+    """
+
+    image: str
+    name: str
+    network: str
+    command: str | None
+    memory_mb: int
+    env_file: Path | None = None
+    inline_env: dict[str, str] = field(default_factory=dict)
+    labels: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True)
+class TaskResult:
+    exit_code: int | None
+    output: str
+    timed_out: bool
+
+    @property
+    def succeeded(self) -> bool:
+        return self.exit_code == 0 and not self.timed_out
+
+
+def command_argv(command: str | None) -> list[str]:
+    """Turn a configured command into arguments for `docker run`.
+
+    A command needing shell features gets a shell, explicitly. Everything else
+    is split and passed directly, which matters more than it looks: a
+    distroless image has no `/bin/sh`, so wrapping every command in one would
+    make cron impossible on exactly the images this platform builds for Go.
+    """
+    if not command:
+        return []
+    if any(ch in command for ch in "|&;<>$*?`"):
+        return ["/bin/sh", "-c", f"exec {command}"]
+    return shlex.split(command)
+
+
+def _process_args(spec: TaskSpec) -> list[str]:
+    args = [
+        "--name",
+        spec.name,
+        "--network",
+        spec.network,
+        f"--memory={spec.memory_mb}m",
+        "--pids-limit=512",
+        "--cap-drop=ALL",
+        "--security-opt=no-new-privileges",
+    ]
+    for key, value in spec.labels.items():
+        args += ["--label", f"{key}={value}"]
+    if spec.env_file is not None:
+        args += ["--env-file", str(spec.env_file)]
+    for key, value in spec.inline_env.items():
+        args += ["--env", f"{key}={value}"]
+    return args
+
+
+async def run_worker(spec: TaskSpec) -> str:
+    """Start a long-running process that serves no traffic."""
+    await remove_by_name(spec.name)
+    args = [
+        "run",
+        "--detach",
+        "--restart",
+        "unless-stopped",
+        "--log-opt",
+        "max-size=10m",
+        "--log-opt",
+        "max-file=3",
+        # Explicit rather than merely absent: the Docker provider ignores
+        # containers without this, but saying so leaves no doubt for anyone
+        # reading `docker inspect` and wondering why the worker has no route.
+        "--label",
+        "traefik.enable=false",
+        *_process_args(spec),
+        spec.image,
+        *command_argv(spec.command),
+    ]
+    out = await _capture(args)
+    return out.strip().splitlines()[-1]
+
+
+async def run_once(spec: TaskSpec, *, timeout: int) -> TaskResult:
+    """Run a container to completion and return its exit code and output.
+
+    Not `--rm`: the container is removed explicitly at the end, because a
+    `--rm` container that is killed on timeout can disappear before its exit
+    status is read, and "the job timed out" and "the job vanished" would
+    become the same report.
+    """
+    await remove_by_name(spec.name)
+    args = [
+        "run",
+        *_process_args(spec),
+        "--label",
+        "traefik.enable=false",
+        spec.image,
+        *command_argv(spec.command),
+    ]
+
+    proc = await asyncio.create_subprocess_exec(
+        "docker",
+        *args,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.STDOUT,
+        env=_env(buildkit=False),
+    )
+    assert proc.stdout is not None
+
+    collected = bytearray()
+    timed_out = False
+
+    async def drain() -> None:
+        assert proc.stdout is not None
+        async for chunk in proc.stdout:
+            collected.extend(chunk)
+            # Trim as we go. Buffering the whole of a runaway job's output and
+            # truncating at the end would mean holding it all in memory first,
+            # which is the thing being defended against.
+            if len(collected) > MAX_OUTPUT_BYTES * 2:
+                del collected[: len(collected) - MAX_OUTPUT_BYTES]
+
+    try:
+        await asyncio.wait_for(asyncio.gather(drain(), proc.wait()), timeout=timeout)
+    except TimeoutError:
+        timed_out = True
+        with contextlib.suppress(DockerError):
+            await _capture(["kill", spec.name])
+        with contextlib.suppress(Exception):
+            await asyncio.wait_for(proc.wait(), timeout=15)
+
+    exit_code = None
+    if not timed_out:
+        with contextlib.suppress(DockerError):
+            raw = await _capture(
+                ["inspect", "--format", "{{.State.ExitCode}}", spec.name]
+            )
+            exit_code = int(raw.strip())
+
+    await remove(spec.name, force=True)
+
+    output = collected.decode(errors="replace")
+    if len(collected) >= MAX_OUTPUT_BYTES:
+        output = "… earlier output trimmed …\n" + output[-MAX_OUTPUT_BYTES:]
+
+    return TaskResult(exit_code=exit_code, output=output, timed_out=timed_out)
+
+
+async def list_process_containers(project_slug: str) -> list[str]:
+    """Names of the worker containers currently running for a project."""
+    out = await _capture(
+        [
+            "ps",
+            "--all",
+            "--format",
+            "{{.Names}}",
+            "--filter",
+            f"label={PROJECT_LABEL}={project_slug}",
+            "--filter",
+            f"label={ROLE_LABEL}=worker",
+        ]
+    )
+    return [line.strip() for line in out.splitlines() if line.strip()]

@@ -15,8 +15,12 @@ from forge.domain.models import (
     Domain,
     EnvTarget,
     EnvVar,
+    JobRun,
+    JobStatus,
     LogLine,
     LogStream,
+    Process,
+    ProcessType,
     Project,
 )
 
@@ -99,4 +103,38 @@ def to_log_line(row: dict[str, Any]) -> LogLine:
         stream=LogStream(row["stream"]),
         line=row["line"],
         at=row["at"],
+    )
+
+
+def to_process(row: dict[str, Any]) -> Process:
+    return Process(
+        id=row["id"],
+        project_id=row["project_id"],
+        name=row["name"],
+        type=ProcessType(row["type"]),
+        command=row["command"],
+        schedule=row["schedule"],
+        memory_mb=row["memory_mb"],
+        replicas=row["replicas"],
+        timeout_seconds=row["timeout_seconds"],
+        enabled=row["enabled"],
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+    )
+
+
+def to_job_run(row: dict[str, Any]) -> JobRun:
+    return JobRun(
+        id=row["id"],
+        process_id=row["process_id"],
+        deployment_id=row["deployment_id"],
+        scheduled_for=row["scheduled_for"],
+        status=JobStatus(row["status"]),
+        exit_code=row["exit_code"],
+        detail=row["detail"],
+        output=row["output"],
+        container_id=row["container_id"],
+        created_at=row["created_at"],
+        started_at=row["started_at"],
+        finished_at=row["finished_at"],
     )

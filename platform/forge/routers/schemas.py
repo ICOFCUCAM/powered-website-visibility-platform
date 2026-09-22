@@ -14,7 +14,15 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
 
-from forge.domain.models import Deployment, Domain, EnvTarget, Project
+from forge.domain.models import (
+    Deployment,
+    Domain,
+    EnvTarget,
+    JobRun,
+    Process,
+    ProcessType,
+    Project,
+)
 
 SLUG_PATTERN = r"^[a-z0-9]([a-z0-9-]{0,38}[a-z0-9])?$"
 
@@ -192,3 +200,104 @@ class LogOut(BaseModel):
 class WebhookAccepted(BaseModel):
     deployment: DeploymentOut | None = None
     ignored: str | None = None
+
+
+class CreateProcess(BaseModel):
+    name: str = Field(pattern=r"^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$")
+    type: ProcessType
+    command: str | None = None
+    schedule: str | None = None
+    memory_mb: int = Field(default=512, ge=64, le=65536)
+    replicas: int = Field(default=1, ge=0, le=20)
+    timeout_seconds: int = Field(default=900, gt=0, le=86_400)
+
+
+class UpdateProcess(BaseModel):
+    command: str | None = None
+    schedule: str | None = None
+    memory_mb: int | None = Field(default=None, ge=64, le=65536)
+    replicas: int | None = Field(default=None, ge=0, le=20)
+    timeout_seconds: int | None = Field(default=None, gt=0, le=86_400)
+    enabled: bool | None = None
+
+    def changes(self) -> dict[str, Any]:
+        return self.model_dump(exclude_unset=True)
+
+
+class ProcessOut(BaseModel):
+    id: UUID
+    project_id: UUID
+    name: str
+    type: str
+    command: str | None
+    schedule: str | None
+    schedule_description: str | None
+    next_run_at: datetime | None
+    memory_mb: int
+    replicas: int
+    timeout_seconds: int
+    enabled: bool
+
+    @classmethod
+    def of(
+        cls,
+        process: Process,
+        *,
+        description: str | None = None,
+        next_run_at: datetime | None = None,
+    ) -> ProcessOut:
+        return cls(
+            id=process.id,
+            project_id=process.project_id,
+            name=process.name,
+            type=process.type.value,
+            command=process.command,
+            schedule=process.schedule,
+            schedule_description=description,
+            next_run_at=next_run_at,
+            memory_mb=process.memory_mb,
+            replicas=process.replicas,
+            timeout_seconds=process.timeout_seconds,
+            enabled=process.enabled,
+        )
+
+
+class JobRunOut(BaseModel):
+    id: UUID
+    process_id: UUID
+    scheduled_for: datetime
+    status: str
+    exit_code: int | None
+    detail: str | None
+    duration_seconds: float | None
+    started_at: datetime | None
+    finished_at: datetime | None
+
+    @classmethod
+    def of(cls, run: JobRun) -> JobRunOut:
+        return cls(
+            id=run.id,
+            process_id=run.process_id,
+            scheduled_for=run.scheduled_for,
+            status=run.status.value,
+            exit_code=run.exit_code,
+            detail=run.detail,
+            duration_seconds=run.duration_seconds,
+            started_at=run.started_at,
+            finished_at=run.finished_at,
+        )
+
+
+class JobRunDetail(JobRunOut):
+    """A single run, with the container's output.
+
+    Kept off the list response on purpose: the tail of one job's output is a
+    useful page and twenty-five of them is a download.
+    """
+
+    output: str | None = None
+
+    @classmethod
+    def of(cls, run: JobRun) -> JobRunDetail:
+        base = JobRunOut.of(run).model_dump()
+        return cls(**base, output=run.output)

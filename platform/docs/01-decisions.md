@@ -164,3 +164,86 @@ owner, it simply does not name one.
 The situation the CLI is most needed in is the one where the API will not
 start, or where the broken deployment is the one serving the dashboard. A tool
 that depends on the thing being repaired is no use during the repair.
+
+## Workers and cron run for production only
+
+A process is another container from the deployment's image. Which deployment
+is not a free choice: a preview of a branch that started a second consumer on
+the same queue would double-process every message, and a preview that ran the
+nightly billing job would run it against real data because somebody opened a
+pull request.
+
+So `reconcile_workers` is called from promotion and from nowhere else, and a
+job run resolves its image through the project's production pointer at fire
+time. The rule is structural rather than a check that a future code path could
+forget.
+
+The same reasoning makes workers roll **back** with production. A rollback that
+left the old workers running the new code would undo half the change, which is
+worse than either version on its own.
+
+## A cron job claims a slot; it does not fire on a timer
+
+The scheduler's sweep does not run anything. It turns "this expression names
+03:00 and it is now 03:00" into a row whose identity is
+`(process_id, scheduled_for)`, and a unique constraint on that pair does the
+rest of the work:
+
+- Three workers sweeping in the same second produce one run.
+- A sweep every twenty seconds against a minute-resolution schedule produces
+  one run, not three.
+- A worker that was down at 03:00 finds the slot still unclaimed when it comes
+  back and runs the job **late rather than not at all**.
+
+The catch-up is bounded — 25 hours — and deliberately returns only the most
+recent missed slot. An hourly job whose worker was down for six hours runs
+once, now, rather than replaying six slots against data that has already moved
+past them. This is the same choice the sibling project's scheduler makes, for
+the same reason.
+
+A slot that is already known to be unrunnable — nothing is serving production
+— is written in its final `skipped` state rather than inserted as `pending`
+and then finished. Inserting it pending leaves a window in which the job loop
+can claim and start a run the sweep is about to mark skipped; the outcome was
+harmless, but it was a race that did not need to exist.
+
+## Jobs run on a second loop, not the deploy loop
+
+Deploys are strictly serial: a build saturates CPU and disk, and two at once
+on a single host are slower than two in sequence while also able to starve each
+other of memory.
+
+Scheduled jobs are not like that. The worker process is only *waiting* on them
+— the work happens inside another container — so they get their own loop and a
+small concurrency limit. Sharing the deploy loop would mean a fifteen-minute
+nightly job blocking every deploy for fifteen minutes, which is exactly the
+kind of coupling that makes people stop using the scheduler.
+
+## The cron parser is ours
+
+Five fields, Vixie semantics, always UTC, about two hundred lines in the domain
+layer. Not for lack of libraries, but because it is a small pure problem and
+keeping it here means the scheduler's behaviour is testable without a clock, a
+database or a container.
+
+The part worth writing by hand is the one that is easy to get wrong:
+day-of-month and day-of-week are the one field pair cron does **not** intersect.
+`0 0 13 * fri` is "the 13th, and every Friday" — not "Friday the 13th". A
+version that intersects them turns a job expected twice a month into one that
+runs twice a year, and nothing announces it.
+
+UTC always, with no per-project timezone. A schedule that means 03:00 in March
+and 03:00 in October but with an hour of difference between them — or that
+skips or repeats an hour twice a year — is not a property anyone wants in a job
+that reconciles billing.
+
+## Job output is captured; worker output is not
+
+A job run keeps the tail of its container's output, bounded, in the database.
+The tail rather than the head because the traceback is at the end, and bounded
+because a job printing a megabyte a second should not be able to fill the disk
+the platform's own database is on.
+
+Workers get no such treatment: they are always on, so capturing their output
+the same way would mean an unbounded, permanently-growing log table. Their
+output stays in the container log, where Docker's rotation already applies.

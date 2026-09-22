@@ -10,6 +10,7 @@ page is complete without it.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated
 from urllib.parse import quote
@@ -23,12 +24,22 @@ from forge.config import Settings, get_settings
 from forge.deps import SettingsDep, token_matches
 from forge.domain import naming, session
 from forge.domain.errors import ForgeError
-from forge.domain.models import Deployment, Domain, EnvTarget, EnvVar, Project
+from forge.domain.models import (
+    Deployment,
+    Domain,
+    EnvTarget,
+    EnvVar,
+    ProcessType,
+    Project,
+)
 from forge.domain.repo_url import validate_repo_url
+from forge.domain.schedule import InvalidSchedule, describe, parse
+from forge.engine import processes as process_engine
 from forge.engine import promote as promote_engine
 from forge.engine import routing, service, verify
 from forge.engine.logs import LogWriter
 from forge.repositories import deployments as deployment_repo
+from forge.repositories import processes as process_repo
 from forge.repositories import projects as project_repo
 
 HERE = Path(__file__).resolve().parent
@@ -172,6 +183,10 @@ async def project_page(
             "primary_domain": summary.primary_domain,
             "deployments": await deployment_repo.list_for_project(project.id, limit=25),
             "env_vars": await project_repo.list_env(project.id),
+            "processes": [
+                await _decorate(process)
+                for process in await process_repo.list_for_project(project.id)
+            ],
             "domains": domains,
             "deploy_domain": settings.deploy_domain,
             "webhook_url": (
@@ -341,6 +356,143 @@ async def remove_domain(request: Request, slug: str, host: str, settings: Settin
     await project_repo.remove_domain(project.id, host)
     await routing.refresh(await project_repo.get(project.id), settings=settings)
     return _redirect(f"/projects/{slug}", ok=f"Removed {host}.")
+
+
+# ---------------------------------------------------------------------------
+# Processes
+# ---------------------------------------------------------------------------
+
+
+@router.post("/projects/{slug}/processes")
+async def add_process(
+    request: Request,
+    slug: str,
+    name: Annotated[str, Form()],
+    type: Annotated[str, Form()],
+    command: Annotated[str, Form()] = "",
+    schedule: Annotated[str, Form()] = "",
+    memory_mb: Annotated[str, Form()] = "512",
+    replicas: Annotated[str, Form()] = "1",
+    timeout_seconds: Annotated[str, Form()] = "900",
+):
+    signed_in(request)
+    project = await project_repo.get_by_slug(slug)
+    kind = ProcessType(type)
+
+    cleaned_schedule: str | None = None
+    if kind is ProcessType.CRON:
+        try:
+            cleaned_schedule = parse(schedule).expression
+        except InvalidSchedule as exc:
+            return _redirect(f"/projects/{slug}", err=str(exc))
+
+    try:
+        await process_repo.create(
+            project_id=project.id,
+            name=name.strip(),
+            type=kind,
+            command=command.strip() or None,
+            schedule=cleaned_schedule,
+            memory_mb=_int(memory_mb, 512),
+            replicas=_int(replicas, 1),
+            timeout_seconds=_int(timeout_seconds, 900),
+        )
+    except ForgeError as exc:
+        return _redirect(f"/projects/{slug}", err=exc.message)
+
+    note = (
+        "Scheduled jobs run against whatever is serving production."
+        if kind is ProcessType.CRON
+        else "Workers start on the next deploy or promotion."
+    )
+    return _redirect(f"/projects/{slug}", ok=f"Added {name}. {note}")
+
+
+@router.get("/projects/{slug}/processes/{name}", response_class=HTMLResponse)
+async def process_page(
+    request: Request, slug: str, name: str, ok: str = "", err: str = ""
+):
+    signed_in(request)
+    project = await project_repo.get_by_slug(slug)
+    process = await process_repo.get_by_name(project.id, name)
+    return _render(
+        request,
+        "process.html",
+        {
+            "project": project,
+            "process": await _decorate(process),
+            "runs": await process_repo.list_runs(process.id, limit=25),
+            "ok": ok,
+            "err": err,
+        },
+    )
+
+
+@router.post("/projects/{slug}/processes/{name}/toggle")
+async def toggle_process(request: Request, slug: str, name: str):
+    signed_in(request)
+    project = await project_repo.get_by_slug(slug)
+    process = await process_repo.get_by_name(project.id, name)
+    await process_repo.update(process.id, {"enabled": not process.enabled})
+    state = "paused" if process.enabled else "resumed"
+    return _redirect(f"/projects/{slug}", ok=f"{name} {state}.")
+
+
+@router.post("/projects/{slug}/processes/{name}/run")
+async def run_process_now(request: Request, slug: str, name: str):
+    signed_in(request)
+    project = await project_repo.get_by_slug(slug)
+    process = await process_repo.get_by_name(project.id, name)
+    if process.type is not ProcessType.CRON:
+        return _redirect(
+            f"/projects/{slug}/processes/{name}",
+            err=f"{name} runs continuously, so there is nothing to trigger.",
+        )
+
+    # The manual run takes the current minute's slot, so pressing this at
+    # 02:59:58 on a job due at 03:00 produces one run rather than two.
+    slot = datetime.now(UTC).replace(second=0, microsecond=0)
+    run = await process_repo.claim_slot(
+        process.id, slot, project.production_deployment_id
+    )
+    if run is None:
+        return _redirect(
+            f"/projects/{slug}/processes/{name}",
+            err="Already queued or running for this minute.",
+        )
+    return _redirect(
+        f"/projects/{slug}/processes/{name}", ok="Queued — it starts within seconds."
+    )
+
+
+@router.post("/projects/{slug}/processes/{name}/delete")
+async def delete_process(request: Request, slug: str, name: str):
+    signed_in(request)
+    project = await project_repo.get_by_slug(slug)
+    process = await process_repo.get_by_name(project.id, name)
+    await process_repo.delete(process.id)
+    return _redirect(f"/projects/{slug}", ok=f"Removed {name}.")
+
+
+async def _decorate(process):
+    """Attach the two derived things the templates want.
+
+    A dict rather than a richer model: these are presentation, and putting
+    "next run in four hours" on the domain object would make it depend on the
+    current time.
+    """
+    description = None
+    if process.runs_on_a_schedule:
+        try:
+            description = describe(parse(process.schedule))
+        except InvalidSchedule:
+            description = "unreadable schedule"
+    return {
+        "process": process,
+        "description": description,
+        "next_run_at": process_engine.next_due(process) if process.enabled else None,
+        "last_run": await process_repo.last_run(process.id),
+    }
 
 
 # ---------------------------------------------------------------------------

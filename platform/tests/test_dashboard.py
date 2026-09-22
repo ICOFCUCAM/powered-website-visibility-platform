@@ -60,6 +60,16 @@ def repos(monkeypatch):
             fakes.domain("www.example.com", verified=False, primary=False),
         ],
         "env": [fakes.env_var("DATABASE_URL"), fakes.env_var("STRIPE_KEY")],
+        "processes": [fakes.process(), fakes.cron()],
+        "runs": [
+            fakes.job_run(),
+            fakes.job_run(
+                status=fakes.JobStatus.FAILED,
+                exit_code=1,
+                detail="Exited 1",
+                output="Error: connection refused",
+            ),
+        ],
         "logs": [
             fakes.log_line(
                 1, "deploying Blog #14 — main at 4f2a9c1e (push)", LogStream.SYSTEM
@@ -111,6 +121,25 @@ def repos(monkeypatch):
     monkeypatch.setattr(
         "forge.web.routes.deployment_repo.read_logs",
         lambda _id, limit=0, after=0: _async(state["logs"]),
+    )
+
+    async def process_by_name(_project_id, name):
+        for proc in state["processes"]:
+            if proc.name == name:
+                return proc
+        raise AssertionError(name)
+
+    monkeypatch.setattr(
+        "forge.web.routes.process_repo.list_for_project",
+        lambda _id: _async(state["processes"]),
+    )
+    monkeypatch.setattr("forge.web.routes.process_repo.get_by_name", process_by_name)
+    monkeypatch.setattr(
+        "forge.web.routes.process_repo.list_runs",
+        lambda _id, limit=25: _async(state["runs"]),
+    )
+    monkeypatch.setattr(
+        "forge.web.routes.process_repo.last_run", lambda _id: _async(state["runs"][0])
     )
     return state
 
@@ -260,3 +289,43 @@ class TestProjectSummary:
         response = await client.get("/")
         assert "not deployed yet" in response.text
         assert "example.com" not in response.text
+
+
+class TestProcesses:
+    async def test_the_project_page_lists_workers_and_jobs(self, client, repos):
+        response = await client.get("/projects/blog")
+        assert "mailer" in response.text
+        assert "nightly" in response.text
+        assert "0 3 * * *" in response.text or "03:00" in response.text
+
+    async def test_a_cron_page_shows_its_schedule_in_words_and_its_runs(
+        self, client, repos
+    ):
+        response = await client.get("/projects/blog/processes/nightly")
+        assert response.status_code == 200
+        assert "every day at 03:00 UTC" in response.text
+        assert "Run now" in response.text
+
+    async def test_a_worker_page_offers_no_run_now_button(self, client, repos):
+        """There is nothing to trigger: it is already running."""
+        response = await client.get("/projects/blog/processes/mailer")
+        assert response.status_code == 200
+        assert "Run now" not in response.text
+
+    async def test_job_output_cannot_inject_markup(self, client, repos, monkeypatch):
+        """A job's output is whatever the customer's own code printed."""
+        monkeypatch.setattr(
+            "forge.web.routes.process_repo.list_runs",
+            lambda _id, limit=25: _async(
+                [fakes.job_run(output="<img src=x onerror=alert(1)>")]
+            ),
+        )
+        response = await client.get("/projects/blog/processes/nightly")
+        assert "<img src=x" not in response.text
+        assert "&lt;img src=x" in response.text
+
+    async def test_a_worker_page_says_where_its_output_goes(self, client, repos):
+        """Workers stream to the container log rather than the database —
+        an always-on process would otherwise write an unbounded log table."""
+        response = await client.get("/projects/blog/processes/mailer")
+        assert "docker logs" in response.text

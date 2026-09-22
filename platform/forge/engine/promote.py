@@ -15,7 +15,7 @@ from forge.adapters import containers
 from forge.config import Settings
 from forge.domain.errors import Conflict
 from forge.domain.models import Deployment, Project
-from forge.engine import routing
+from forge.engine import processes, routing
 from forge.engine.launch import ensure_serving
 from forge.engine.logs import LogWriter
 from forge.repositories import deployments as deployment_repo
@@ -45,6 +45,21 @@ async def promote(
     await log.system(await routing.publish(project, deployment, settings=settings))
     await project_repo.set_production(project.id, deployment.id)
     await log.system(f"deployment #{deployment.number} is now serving production")
+
+    # Workers roll forward with production — and back with it. A rollback that
+    # left the old workers running the new code would undo half the change,
+    # which is worse than either version on its own. Failing to start them is
+    # not allowed to un-promote a healthy website, so it is reported rather
+    # than raised: the site is up, and the worker is the thing to go and fix.
+    project = await project_repo.get(project.id)
+    try:
+        await processes.reconcile_workers(
+            project, deployment, settings=settings, log=log, workdir=workdir
+        )
+    except Exception as exc:  # noqa: BLE001 - reported, never fatal to a promotion
+        await log.system(
+            f"WARNING: production is serving, but the workers did not start: {exc}"
+        )
 
     await reclaim(project, protect={deployment.id}, log=log)
     return deployment

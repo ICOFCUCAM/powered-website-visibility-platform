@@ -41,6 +41,8 @@ at the same time.
 | **Custom domains with automatic TLS** | With a canonical redirect from every alias to the primary |
 | **Preview deploys** | Any non-production branch gets a URL and is kept away from production secrets |
 | **A dashboard** | Projects, deployments, live build logs, variables, domains and one-click rollback |
+| **Background workers** | Long-running processes from the same image as the site — queue consumers, listeners |
+| **Scheduled jobs** | Five-field cron in UTC, with run history, captured output and catch-up after downtime |
 
 ## How it works
 
@@ -222,6 +224,43 @@ unverified name would fail its ACME challenge against a rate limit shared by
 every site on the host. Once verified, aliases 301 to the primary, because two
 hostnames serving identical pages is a duplicate-content problem.
 
+### Workers and scheduled jobs
+
+This is the part Vercel has no answer for. A process is another container from
+the **same image** as the deployment, so the worker consuming your queue is
+running exactly the code the website is running — not a second build of the
+same commit.
+
+```bash
+forge process add blog mailer  --type worker --command "node worker.js" --replicas 2
+forge process add blog nightly --type cron   --command "node cleanup.js" \
+                               --schedule "0 3 * * *"
+
+forge process list blog
+forge runs blog nightly --output      # history, and the last run's output
+forge process run blog nightly        # trigger it now, outside the schedule
+```
+
+**Both run against production only.** A preview of a branch must not start a
+second consumer on the same queue, and must not run the nightly billing job
+against real data because someone opened a pull request.
+
+Workers are recreated on every promotion, so they roll forward with production
+**and back with it**. A rollback that left the old workers running the new code
+would undo half the change, which is worse than either version on its own.
+
+Scheduled jobs claim the slot their expression names, rather than firing on a
+timer. A worker that was down at 03:00 runs the job late instead of skipping
+the day, and because the slot is a row with a unique constraint, three workers
+sweeping in the same second produce exactly one run. A job still going when its
+timeout expires is killed and recorded as `timed_out` — otherwise one hung run
+holds the slot and every later run is silently skipped.
+
+Job output is captured and kept with the run, tail-first — the traceback is at
+the end, and the amount kept is bounded so a job printing a megabyte a second
+cannot fill the database. Workers stream to the container log instead, because
+an always-on process would otherwise write an unbounded log table.
+
 ### Rollback
 
 ```bash
@@ -255,6 +294,9 @@ which is derived from the same token so a browser needs no second credential.
 | `POST /api/deployments/{id}/promote` | promote or roll back |
 | `POST /api/deployments/{id}/redeploy` | rebuild the same commit |
 | `POST /api/deployments/{id}/cancel` | only while still queued |
+| `GET POST /api/projects/{ref}/processes` | workers and scheduled jobs |
+| `GET PATCH DELETE /api/processes/{id}` | one process |
+| `GET /api/processes/{id}/runs` · `POST …/run` | run history, and trigger now |
 | `POST /webhooks/{slug}` | git push, HMAC-signed |
 
 ### Telling Forge how to build
@@ -304,7 +346,7 @@ and `og:image`.
 
 Run `./scripts/check.sh` for ruff, the import contracts and the suite.
 
-**Tested (120 tests, no daemon needed):** detection across nine stacks and its
+**Tested (168 tests, no daemon needed):** detection across nine stacks and its
 tie-breaks, including that a commented-out `output: 'standalone'` is not read
 as enabled; image invariants over every generator (non-root, multi-stage, no
 `ARG`, dependency layer before source); DNS label safety and non-enumerable
@@ -319,8 +361,8 @@ promotion or rollback against a live daemon — this environment has the Docker
 CLI but no daemon. Also unexercised: the migrations against a real Postgres,
 and Traefik actually reloading a written route file.
 
-**Not built:** per-project cron jobs and background workers; image garbage
-collection; log retention; metrics; multi-node scheduling.
+**Not built:** image garbage collection; job and log retention; metrics;
+multi-node scheduling; alerting when a scheduled job starts failing.
 
 ## Layout
 
@@ -329,7 +371,8 @@ forge/
   domain/        pure: detection, Dockerfile generation, naming, models
   adapters/      Postgres, Docker CLI, git, Traefik files, encryption
   repositories/  queries, including the deployment queue
-  engine/        the pipeline, promotion, health, environment, routing
+  engine/        the pipeline, promotion, health, environment, routing,
+                 processes and the schedule sweep
   routers/       HTTP (the JSON API)
   web/           the dashboard: routes, templates, one stylesheet, one script
   worker.py      the deploy loop

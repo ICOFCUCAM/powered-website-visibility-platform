@@ -28,3 +28,51 @@
   </div>
 </a>
 {%- endmacro %}
+
+{% macro job_pill(status) -%}
+{% set tone = {'succeeded': 'ready', 'failed': 'failed', 'timed_out': 'failed',
+               'running': 'building', 'pending': 'queued',
+               'skipped': 'cancelled'}.get(status, 'plain') %}
+<span class="pill pill-{{ tone }}"><span class="dot"></span>{{ status.replace('_', ' ') }}</span>
+{%- endmacro %}
+
+{% macro process_row(item, project_slug) -%}
+{% set p = item.process %}
+<div class="row">
+  <div class="row-main">
+    <div class="row-title">
+      <a href="/projects/{{ project_slug }}/processes/{{ p.name }}"
+         class="mono">{{ p.name }}</a>
+      <span class="pill pill-plain">{{ p.type.value }}</span>
+      {% if not p.enabled %}<span class="pill pill-cancelled">paused</span>{% endif %}
+      {% if item.last_run %}{{ job_pill(item.last_run.status.value) }}{% endif %}
+    </div>
+    <div class="row-sub">
+      {% if p.command %}<span class="mono">{{ p.command }}</span>{% else %}
+        <span class="faint">the image's own command</span>{% endif %}
+      {% if item.description %} · {{ item.description }}{% endif %}
+      {% if p.type.value == 'worker' %} · {{ p.replicas }}×{% endif %}
+    </div>
+  </div>
+  <div class="row-aside">
+    {% if item.next_run_at %}
+      next {{ item.next_run_at.strftime('%d %b %H:%M') }} UTC
+    {% elif p.type.value == 'cron' %}
+      <span class="faint">paused</span>
+    {% endif %}
+  </div>
+  <div class="actions">
+    <form method="post"
+          action="/projects/{{ project_slug }}/processes/{{ p.name }}/toggle">
+      <button class="btn btn-small" type="submit">
+        {{ 'Resume' if not p.enabled else 'Pause' }}
+      </button>
+    </form>
+    <form method="post"
+          action="/projects/{{ project_slug }}/processes/{{ p.name }}/delete"
+          onsubmit="return confirm('Remove {{ p.name }}?')">
+      <button class="btn btn-small btn-danger" type="submit">Remove</button>
+    </form>
+  </div>
+</div>
+{%- endmacro %}

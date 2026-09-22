@@ -75,3 +75,24 @@ def router_id(short_id: str, *, production: bool = False) -> str:
     the project's production domains resolve through two independent routers.
     """
     return f"{short_id}-prod" if production else short_id
+
+
+def worker_container_name(project_slug: str, process: str, replica: int) -> str:
+    """Named after the project and process, deliberately not the deployment.
+
+    A worker's identity is "the mailer for the blog", not "the mailer for
+    deployment 14". Naming it after the deployment would make every promotion
+    leave the old container running under its own name, and reconciliation
+    would have to work out which of them was current.
+    """
+    return f"forge-{project_slug}-{process}-{replica}"
+
+
+def job_container_name(project_slug: str, process: str, slot: str) -> str:
+    """One container per slot, named after it.
+
+    The slot is in the name so that a job still running when the next one is
+    due cannot collide with it, and so `docker ps` during an incident says
+    which run is the stuck one.
+    """
+    return f"forge-job-{project_slug}-{process}-{slot}"

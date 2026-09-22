@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import deployment_row, status_pill %}
+{% from "_macros.html" import deployment_row, process_row, status_pill %}
 {% block title %}{{ project.name }} — Forge{% endblock %}
 {% block content %}
 
@@ -55,6 +55,45 @@
 {% else %}
   <div class="card"><div class="empty"><p>No deployments yet.</p></div></div>
 {% endif %}
+
+<h2>Workers and scheduled jobs</h2>
+<div class="card">
+  {% if processes %}
+  <div class="rows">
+    {% for item in processes %}{{ process_row(item, project.slug) }}{% endfor %}
+  </div>
+  {% endif %}
+  <div class="card-body" {% if processes %}style="border-top:1px solid var(--border)"{% endif %}>
+    <form method="post" action="/projects/{{ project.slug }}/processes"
+          class="inline-form">
+      <div class="field field-mono" style="flex:0 0 140px">
+        <label for="p_name">Name</label>
+        <input type="text" id="p_name" name="name" placeholder="mailer" required>
+      </div>
+      <div class="field" style="flex:0 0 120px">
+        <label for="p_type">Type</label>
+        <select id="p_type" name="type">
+          <option value="worker">Worker</option>
+          <option value="cron">Scheduled</option>
+        </select>
+      </div>
+      <div class="field field-mono">
+        <label for="p_command">Command</label>
+        <input type="text" id="p_command" name="command" placeholder="node worker.js">
+      </div>
+      <div class="field field-mono" style="flex:0 0 150px">
+        <label for="p_schedule">Schedule</label>
+        <input type="text" id="p_schedule" name="schedule" placeholder="0 3 * * *">
+      </div>
+      <button class="btn" type="submit">Add</button>
+    </form>
+    <p class="hint" style="margin:10px 0 0">
+      A worker runs continuously; a scheduled job runs on its cron expression
+      in UTC and needs one. Both run the production deployment's image — never
+      a preview, so a pull request cannot start a second queue consumer.
+    </p>
+  </div>
+</div>
 
 <h2>Environment variables</h2>
 <div class="card">
