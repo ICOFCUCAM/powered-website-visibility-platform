@@ -1,0 +1,149 @@
+# The whole platform: a router, a database, the control plane and a worker.
+#
+#   docker compose up -d
+#   docker compose exec api forge migrate
+#
+# Deployed sites are NOT in this file. They are containers the worker creates
+# at deploy time, joined to the same network, which is how the router finds
+# them and how they survive a `docker compose down` of everything here.
+
+name: forge
+
+services:
+  # ---------------------------------------------------------------------
+  # The edge. The only thing with published ports.
+  # ---------------------------------------------------------------------
+  router:
+    image: traefik:v3.1
+    restart: unless-stopped
+    command:
+      - --providers.docker=true
+      # Nothing is routed unless it says so. Without this every container on
+      # the host — including Postgres — gets a public hostname derived from
+      # its name, which is exactly as bad as it sounds.
+      - --providers.docker.exposedByDefault=false
+      - --providers.docker.network=${FORGE_NETWORK:-forge}
+      # Where promotions are published. Watched, so a promotion takes effect
+      # without restarting anything.
+      - --providers.file.directory=/etc/traefik/dynamic
+      - --providers.file.watch=true
+      - --entrypoints.web.address=:80
+      - --entrypoints.websecure.address=:443
+      - --entrypoints.web.http.redirections.entrypoint.to=websecure
+      - --entrypoints.web.http.redirections.entrypoint.scheme=https
+      # One wildcard certificate, inherited by every deployment router. See
+      # the comment in forge/adapters/containers.py for why per-deployment
+      # certificates would take the platform down within a fortnight.
+      - --entrypoints.websecure.http.tls.certResolver=wildcard
+      - --entrypoints.websecure.http.tls.domains[0].main=${FORGE_DEPLOY_DOMAIN}
+      - --entrypoints.websecure.http.tls.domains[0].sans=*.${FORGE_DEPLOY_DOMAIN}
+      # Wildcards can only be proven over DNS-01.
+      - --certificatesresolvers.wildcard.acme.email=${FORGE_ACME_EMAIL}
+      - --certificatesresolvers.wildcard.acme.storage=/acme/wildcard.json
+      - --certificatesresolvers.wildcard.acme.dnschallenge=true
+      - --certificatesresolvers.wildcard.acme.dnschallenge.provider=${FORGE_DNS_PROVIDER}
+      # Customers' own domains resolve to this host but their DNS is somewhere
+      # this platform has no token for, so they are proven over HTTP-01
+      # instead. Low volume: one certificate per domain, not per deploy.
+      - --certificatesresolvers.le.acme.email=${FORGE_ACME_EMAIL}
+      - --certificatesresolvers.le.acme.storage=/acme/le.json
+      - --certificatesresolvers.le.acme.httpchallenge=true
+      - --certificatesresolvers.le.acme.httpchallenge.entrypoint=web
+      - --log.level=INFO
+      - --accesslog=true
+    environment:
+      # Whatever your DNS provider needs. Cloudflare is the example; see
+      # https://doc.traefik.io/traefik/https/acme/#providers
+      CF_DNS_API_TOKEN: ${CF_DNS_API_TOKEN:-}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      # Read-only: the router needs to see containers and their labels, and
+      # nothing else. A writable socket here would make a router compromise a
+      # host compromise.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - router-config:/etc/traefik/dynamic:ro
+      - acme:/acme
+    networks:
+      - forge
+
+  # ---------------------------------------------------------------------
+  # State
+  # ---------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: forge
+      POSTGRES_DB: forge
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U forge -d forge"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks:
+      - forge
+
+  # ---------------------------------------------------------------------
+  # The control plane: API, and the worker that actually builds
+  # ---------------------------------------------------------------------
+  api:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://forge:${POSTGRES_PASSWORD}@postgres:5432/forge
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - router-config:/var/lib/forge/router
+      - build-cache:/var/lib/forge/builds
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: ${FORGE_NETWORK:-forge}
+      traefik.http.routers.forge-api.rule: Host(`forge.${FORGE_DEPLOY_DOMAIN}`)
+      traefik.http.routers.forge-api.entrypoints: websecure
+      traefik.http.routers.forge-api.tls: "true"
+      traefik.http.services.forge-api.loadbalancer.server.port: "8000"
+    networks:
+      - forge
+
+  worker:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://forge:${POSTGRES_PASSWORD}@postgres:5432/forge
+    command: ["python", "-m", "forge.worker"]
+    volumes:
+      # The worker drives the host's Docker daemon: it builds images and runs
+      # the containers that serve every site. This socket is the platform.
+      - /var/run/docker.sock:/var/run/docker.sock
+      - router-config:/var/lib/forge/router
+      - build-cache:/var/lib/forge/builds
+    networks:
+      - forge
+
+networks:
+  forge:
+    name: ${FORGE_NETWORK:-forge}
+    # Deployment containers join this network by name, created by the worker
+    # rather than by compose, so it must be a plain named network both agree on.
+    external: false
+
+volumes:
+  postgres-data:
+  # Shared, deliberately: the control plane writes promotions here and the
+  # router reads them. It is the handoff between the two.
+  router-config:
+  build-cache:
+  acme:
