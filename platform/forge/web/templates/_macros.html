@@ -1,0 +1,30 @@
+{# Shared fragments. Kept in one file so a status pill looks the same on the
+   list as it does on the detail page. #}
+
+{% macro status_pill(status) -%}
+<span class="pill pill-{{ status }}"><span class="dot"></span>{{ status }}</span>
+{%- endmacro %}
+
+{% macro deployment_row(d, show_project=false) -%}
+<a class="row" href="/deployments/{{ d.short_id }}">
+  <div class="row-main">
+    <div class="row-title">
+      <span>#{{ d.number }}</span>
+      {{ status_pill(d.status.value) }}
+      {% if d.is_production %}<span class="pill pill-prod">production</span>{% endif %}
+      {% if d.trigger.value != 'push' %}
+        <span class="pill pill-plain">{{ d.trigger.value }}</span>
+      {% endif %}
+    </div>
+    <div class="row-sub">
+      <span class="mono">{{ d.git_sha[:8] }}</span>
+      <span class="faint">on</span> {{ d.git_ref }}
+      {% if d.git_message %}— {{ d.git_message }}{% endif %}
+    </div>
+  </div>
+  <div class="row-aside">
+    {{ d.created_at.strftime('%d %b %H:%M') }}
+    {% if d.is_live %}<br><span class="mono faint">running</span>{% endif %}
+  </div>
+</a>
+{%- endmacro %}

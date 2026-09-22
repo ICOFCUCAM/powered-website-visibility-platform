@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}New project — Forge{% endblock %}
+{% block content %}
+<div class="breadcrumb"><a href="/">Projects</a> / new</div>
+<div class="page-head"><h1>New project</h1></div>
+
+<div class="card"><div class="card-body">
+<form method="post" action="/projects/new">
+  <div class="field">
+    <label for="name">Name</label>
+    <input type="text" id="name" name="name" required autofocus placeholder="Blog">
+    <div class="hint">The URL slug is derived from this unless you set one below.</div>
+  </div>
+
+  <div class="field field-mono">
+    <label for="repo_url">Repository</label>
+    <input type="text" id="repo_url" name="repo_url" required
+           placeholder="https://github.com/you/blog.git">
+  </div>
+
+  <div class="grid-2">
+    <div class="field">
+      <label for="production_branch">Production branch</label>
+      <input type="text" id="production_branch" name="production_branch" value="main">
+      <div class="hint">Other branches deploy as previews.</div>
+    </div>
+    <div class="field field-mono">
+      <label for="root_directory">Root directory <span class="faint">optional</span></label>
+      <input type="text" id="root_directory" name="root_directory" placeholder="web">
+      <div class="hint">If the app is in a subdirectory, name it here.</div>
+    </div>
+  </div>
+
+  <div class="grid-2">
+    <div class="field field-mono">
+      <label for="slug">Slug <span class="faint">optional</span></label>
+      <input type="text" id="slug" name="slug" placeholder="blog">
+    </div>
+    <div class="field">
+      <label for="memory_mb">Memory limit (MB)</label>
+      <input type="text" id="memory_mb" name="memory_mb" value="512">
+    </div>
+  </div>
+
+  <div class="actions">
+    <button class="btn btn-primary" type="submit">Create project</button>
+    <a class="btn" href="/">Cancel</a>
+  </div>
+</form>
+</div></div>
+
+<div class="card"><div class="card-body">
+  <p class="dim" style="margin:0;font-size:13.5px">
+    Forge works out how to build the repository on the first deploy — it reads
+    the config files rather than guessing from the directory name. If it gets
+    it wrong, or the stack isn't one it knows, commit a
+    <span class="mono">Dockerfile</span> and it will be used unchanged.
+  </p>
+</div></div>
+{% endblock %}

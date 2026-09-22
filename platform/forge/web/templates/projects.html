@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% from "_macros.html" import status_pill %}
+{% block title %}Projects — Forge{% endblock %}
+{% block content %}
+
+<div class="page-head">
+  <h1>Projects</h1>
+  <div class="spacer"></div>
+  <a class="btn btn-primary" href="/projects/new">New project</a>
+</div>
+
+{% if not projects %}
+  <div class="card"><div class="empty">
+    <p>Nothing is deployed here yet.</p>
+    <a class="btn btn-primary" href="/projects/new">Create your first project</a>
+  </div></div>
+{% else %}
+  <div class="card rows">
+  {% for item in projects %}
+    <a class="row" href="/projects/{{ item.project.slug }}">
+      <div class="row-main">
+        <div class="row-title">
+          {{ item.project.name }}
+          {% if item.live %}{{ status_pill(item.live.status.value) }}{% endif %}
+        </div>
+        <div class="row-sub">
+          {% if item.primary_domain %}
+            {{ item.primary_domain }}
+          {% elif item.live %}
+            {{ item.live_url }}
+          {% else %}
+            <span class="faint">not deployed yet</span>
+          {% endif %}
+        </div>
+      </div>
+      <div class="row-aside">
+        {% if item.live %}
+          <span class="mono">{{ item.live.git_sha[:8] }}</span><br>
+          {{ item.live.ready_at.strftime('%d %b %H:%M') if item.live.ready_at else '' }}
+        {% else %}
+          <span class="faint">—</span>
+        {% endif %}
+      </div>
+    </a>
+  {% endfor %}
+  </div>
+{% endif %}
+{% endblock %}

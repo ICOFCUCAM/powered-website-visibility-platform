@@ -47,7 +47,12 @@ async def test_health_needs_no_token(client):
 
 
 @pytest.mark.parametrize(
-    "path", ["/projects", "/deployments/blog-abc12345", "/projects/blog/env"]
+    "path",
+    [
+        "/api/projects",
+        "/api/deployments/blog-abc12345",
+        "/api/projects/blog/env",
+    ],
 )
 async def test_every_management_route_refuses_an_anonymous_caller(client, path):
     response = await client.get(path)
@@ -57,19 +62,19 @@ async def test_every_management_route_refuses_an_anonymous_caller(client, path):
 
 async def test_a_wrong_token_is_refused(client):
     response = await client.get(
-        "/projects", headers={"Authorization": "Bearer not-the-token"}
+        "/api/projects", headers={"Authorization": "Bearer not-the-token"}
     )
     assert response.status_code == 401
 
 
 async def test_a_token_in_the_wrong_scheme_is_refused(client):
     """Basic auth carrying the right secret is still not a bearer token."""
-    response = await client.get("/projects", headers={"Authorization": TOKEN})
+    response = await client.get("/api/projects", headers={"Authorization": TOKEN})
     assert response.status_code == 401
 
 
 async def test_errors_come_back_as_structured_json_not_a_stack_trace(client):
-    response = await client.get("/projects")
+    response = await client.get("/api/projects")
     body = response.json()
     assert set(body["error"]) == {"code", "message"}
     assert "Traceback" not in response.text

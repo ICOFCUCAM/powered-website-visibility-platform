@@ -12,9 +12,10 @@ from __future__ import annotations
 import hmac
 from typing import Annotated
 
-from fastapi import Depends, Header
+from fastapi import Depends, Header, Request
 
 from forge.config import Settings, get_settings
+from forge.domain import session
 from forge.domain.errors import NotFound, Unauthorized
 from forge.domain.models import Project
 from forge.repositories import projects as project_repo
@@ -27,22 +28,44 @@ def settings_dep() -> Settings:
 SettingsDep = Annotated[Settings, Depends(settings_dep)]
 
 
+def token_matches(presented: str, expected: str) -> bool:
+    """`hmac.compare_digest` rather than `==`.
+
+    A plain comparison returns as soon as two bytes differ, so the time it
+    takes measures how many leading characters were right. It is a slow attack
+    over a network and a fast one from the same host, and the fix costs
+    nothing.
+    """
+    return hmac.compare_digest(presented, expected)
+
+
 async def require_token(
+    request: Request,
     authorization: Annotated[str | None, Header()] = None,
     settings: SettingsDep = None,  # type: ignore[assignment]
 ) -> None:
-    """Check the bearer token in constant time.
+    """Accept a bearer token, or the dashboard's session cookie.
 
-    `hmac.compare_digest` rather than `==`: a plain comparison returns as soon
-    as two bytes differ, and the time it takes is a measurement of how many
-    leading characters were right. It is a slow attack over a network and a
-    fast one from the same host, and the fix costs nothing.
+    Two credentials, one check. A browser cannot attach an Authorization
+    header to a plain navigation or to an EventSource, so the dashboard signs
+    in once and holds a cookie derived from the same token — rather than the
+    platform growing a second, separately-revocable secret.
     """
-    if not authorization or not authorization.lower().startswith("bearer "):
-        raise Unauthorized("Provide a bearer token")
-    presented = authorization.split(" ", 1)[1].strip()
-    if not hmac.compare_digest(presented, settings.api_token):
+    if authorization and authorization.lower().startswith("bearer "):
+        presented = authorization.split(" ", 1)[1].strip()
+        if token_matches(presented, settings.api_token):
+            return
         raise Unauthorized("That token is not valid")
+
+    cookie = request.cookies.get(session.COOKIE_NAME)
+    if cookie:
+        try:
+            session.verify(cookie, token=settings.api_token)
+        except session.InvalidSession as exc:
+            raise Unauthorized(f"Your session is not valid: {exc}") from exc
+        return
+
+    raise Unauthorized("Provide a bearer token")
 
 
 Authenticated = Depends(require_token)

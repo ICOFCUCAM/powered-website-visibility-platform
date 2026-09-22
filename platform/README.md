@@ -23,8 +23,11 @@ signatures and API authentication. The parts that need a daemon — an actual
 `docker build`, an actual promotion — are written but unexercised. See
 [What is proven and what is not](#what-is-proven-and-what-is-not).
 
-There is no web dashboard yet. Everything below is the HTTP API and the `forge`
-CLI.
+The dashboard is server-rendered from the control plane itself — no build
+step, no separate deployment, and every action on it is a plain form that
+works without JavaScript. That is deliberate: it is the page you open when a
+deploy has gone wrong, so it must not depend on anything that could be wrong
+at the same time.
 
 ## What it does
 
@@ -37,6 +40,7 @@ CLI.
 | **Encrypted environment variables** | Fernet at rest, scoped to production or preview, never readable back through the API |
 | **Custom domains with automatic TLS** | With a canonical redirect from every alias to the primary |
 | **Preview deploys** | Any non-production branch gets a URL and is kept away from production secrets |
+| **A dashboard** | Projects, deployments, live build logs, variables, domains and one-click rollback |
 
 ## How it works
 
@@ -180,6 +184,11 @@ Then deploy on every push:
 forge webhook blog      # prints the payload URL and the secret
 ```
 
+The same thing is on the project page in the dashboard, at
+`https://forge.deploys.example.com` — sign in with `FORGE_API_TOKEN` and the
+browser holds a signed cookie derived from it, so there is still only one
+credential to keep.
+
 Paste both into the repository's **Settings → Webhooks**. Pushes to the
 production branch deploy and promote; pushes to any other branch get a preview
 URL and cannot see production-scoped variables.
@@ -228,22 +237,24 @@ forge promote blog '#13'
 
 ### API
 
-All routes except `/health`, `/ready` and `/webhooks/*` need
-`Authorization: Bearer $FORGE_API_TOKEN`.
+The dashboard owns the root path; the JSON API lives under `/api`. All of it
+except `/health`, `/ready` and `/webhooks/*` needs
+`Authorization: Bearer $FORGE_API_TOKEN` — or the dashboard's session cookie,
+which is derived from the same token so a browser needs no second credential.
 
 | | |
 | --- | --- |
-| `POST /projects` `GET /projects` | create and list |
-| `GET PATCH DELETE /projects/{ref}` | `{ref}` is a slug or a uuid |
-| `POST /projects/{ref}/deploy` | queue a deployment |
-| `GET /projects/{ref}/deployments` | history |
-| `GET PUT /projects/{ref}/env` · `DELETE …/env/{key}` | variables; values never come back out |
-| `GET POST /projects/{ref}/domains` · `POST …/{host}/verify` | custom domains |
-| `GET /deployments/{id}` | one deployment |
-| `GET /deployments/{id}/logs` · `/logs/stream` | paged, or server-sent events |
-| `POST /deployments/{id}/promote` | promote or roll back |
-| `POST /deployments/{id}/redeploy` | rebuild the same commit |
-| `POST /deployments/{id}/cancel` | only while still queued |
+| `POST /api/projects` `GET /api/projects` | create and list |
+| `GET PATCH DELETE /api/projects/{ref}` | `{ref}` is a slug or a uuid |
+| `POST /api/projects/{ref}/deploy` | queue a deployment |
+| `GET /api/projects/{ref}/deployments` | history |
+| `GET PUT /api/projects/{ref}/env` · `DELETE …/env/{key}` | variables; values never come back out |
+| `GET POST /api/projects/{ref}/domains` · `POST …/{host}/verify` | custom domains |
+| `GET /api/deployments/{id}` | one deployment |
+| `GET /api/deployments/{id}/logs` · `/logs/stream` | paged, or server-sent events |
+| `POST /api/deployments/{id}/promote` | promote or roll back |
+| `POST /api/deployments/{id}/redeploy` | rebuild the same commit |
+| `POST /api/deployments/{id}/cancel` | only while still queued |
 | `POST /webhooks/{slug}` | git push, HMAC-signed |
 
 ### Telling Forge how to build
@@ -293,7 +304,7 @@ and `og:image`.
 
 Run `./scripts/check.sh` for ruff, the import contracts and the suite.
 
-**Tested (102 tests, no daemon needed):** detection across nine stacks and its
+**Tested (120 tests, no daemon needed):** detection across nine stacks and its
 tie-breaks, including that a commented-out `output: 'standalone'` is not read
 as enabled; image invariants over every generator (non-root, multi-stage, no
 `ARG`, dependency layer before source); DNS label safety and non-enumerable
@@ -308,8 +319,8 @@ promotion or rollback against a live daemon — this environment has the Docker
 CLI but no daemon. Also unexercised: the migrations against a real Postgres,
 and Traefik actually reloading a written route file.
 
-**Not built:** a web dashboard; per-project cron jobs and background workers;
-image garbage collection; log retention; metrics; multi-node scheduling.
+**Not built:** per-project cron jobs and background workers; image garbage
+collection; log retention; metrics; multi-node scheduling.
 
 ## Layout
 
@@ -319,7 +330,8 @@ forge/
   adapters/      Postgres, Docker CLI, git, Traefik files, encryption
   repositories/  queries, including the deployment queue
   engine/        the pipeline, promotion, health, environment, routing
-  routers/       HTTP
+  routers/       HTTP (the JSON API)
+  web/           the dashboard: routes, templates, one stylesheet, one script
   worker.py      the deploy loop
   cli.py         the operator's tool
 db/migrations/   schema

@@ -21,10 +21,10 @@ from forge.repositories import projects as project_repo
 from forge.routers.schemas import DeploymentOut, DeployRequest, LogOut
 
 project_router = APIRouter(
-    prefix="/projects", tags=["deployments"], dependencies=[Authenticated]
+    prefix="/api/projects", tags=["deployments"], dependencies=[Authenticated]
 )
 router = APIRouter(
-    prefix="/deployments", tags=["deployments"], dependencies=[Authenticated]
+    prefix="/api/deployments", tags=["deployments"], dependencies=[Authenticated]
 )
 
 #: How often the log stream looks for new lines. Fast enough to read like a

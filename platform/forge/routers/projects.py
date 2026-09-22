@@ -22,7 +22,9 @@ from forge.routers.schemas import (
     UpdateProject,
 )
 
-router = APIRouter(prefix="/projects", tags=["projects"], dependencies=[Authenticated])
+router = APIRouter(
+    prefix="/api/projects", tags=["projects"], dependencies=[Authenticated]
+)
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)

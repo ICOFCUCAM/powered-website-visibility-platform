@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% from "_macros.html" import status_pill %}
+{% block title %}#{{ deployment.number }} {{ project.name }} — Forge{% endblock %}
+{% block content %}
+
+<div class="breadcrumb">
+  <a href="/">Projects</a> /
+  <a href="/projects/{{ project.slug }}">{{ project.slug }}</a> /
+  #{{ deployment.number }}
+</div>
+
+<div class="page-head">
+  <div>
+    <h1>
+      Deployment #{{ deployment.number }}
+      {{ status_pill(deployment.status.value) }}
+      {% if is_production %}<span class="pill pill-prod">production</span>{% endif %}
+    </h1>
+    <div class="row-sub">
+      <span class="mono">{{ deployment.git_sha[:12] }}</span>
+      <span class="faint">on</span> {{ deployment.git_ref }}
+      {% if deployment.git_message %}— {{ deployment.git_message }}{% endif %}
+    </div>
+  </div>
+  <div class="spacer"></div>
+  <div class="actions">
+    {% if deployment.status.value == 'ready' and not is_production %}
+      <form method="post" action="/deployments/{{ deployment.short_id }}/promote">
+        <button class="btn btn-primary" type="submit">
+          {% if is_older %}Roll back to this{% else %}Promote to production{% endif %}
+        </button>
+      </form>
+    {% endif %}
+    {% if deployment.status.is_terminal %}
+      <form method="post" action="/deployments/{{ deployment.short_id }}/redeploy">
+        <button class="btn" type="submit">Redeploy</button>
+      </form>
+    {% endif %}
+    {% if deployment.status.value == 'queued' %}
+      <form method="post" action="/deployments/{{ deployment.short_id }}/cancel">
+        <button class="btn btn-danger" type="submit">Cancel</button>
+      </form>
+    {% endif %}
+  </div>
+</div>
+
+{% if deployment.error %}
+  <div class="notice notice-bad">{{ deployment.error }}</div>
+{% endif %}
+
+<div class="card"><div class="card-body">
+  <dl class="kv">
+    <dt>URL</dt>
+    <dd>
+      {% if deployment.status.value == 'ready' %}
+        <a href="{{ url }}" rel="noreferrer">{{ url }}</a>
+        {% if not deployment.is_live %}
+          <span class="pill pill-plain">reclaimed — restarts on rollback</span>
+        {% endif %}
+      {% else %}
+        <span class="faint">{{ url }}</span>
+      {% endif %}
+    </dd>
+    <dt>Trigger</dt><dd>{{ deployment.trigger.value }}{% if deployment.git_author %} by {{ deployment.git_author }}{% endif %}</dd>
+    {% if deployment.framework %}<dt>Built as</dt><dd class="mono">{{ deployment.framework }}</dd>{% endif %}
+    {% if deployment.image_tag %}<dt>Image</dt><dd class="mono">{{ deployment.image_tag }}</dd>{% endif %}
+    <dt>Queued</dt><dd>{{ deployment.created_at.strftime('%d %b %Y, %H:%M:%S') }}</dd>
+    {% if duration %}<dt>Took</dt><dd>{{ duration }}</dd>{% endif %}
+  </dl>
+</div></div>
+
+<h2>Build log</h2>
+<div class="log" id="log" data-short-id="{{ deployment.short_id }}"
+     data-terminal="{{ 'true' if deployment.status.is_terminal else 'false' }}"
+     data-cursor="{{ cursor }}">
+{%- for line in logs -%}
+<span class="log-line log-{{ line.stream.value }}">{{ line.line }}</span>
+{%- else -%}
+<span class="log-line log-empty">Waiting for the worker to pick this up…</span>
+{%- endfor -%}
+</div>
+<div class="log-status" id="log-status">
+  {% if not deployment.status.is_terminal %}
+    <span class="pill pill-{{ deployment.status.value }}"><span class="dot"></span>{{ deployment.status.value }}</span>
+    streaming
+  {% else %}
+    finished — {{ deployment.status.value }}
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/forge.js" defer></script>
+{% endblock %}

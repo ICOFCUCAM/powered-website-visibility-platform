@@ -12,12 +12,14 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 
 from forge.adapters import db
 from forge.config import get_settings
 from forge.domain.errors import ForgeError
 from forge.routers import deployments, health, projects, webhooks
+from forge.web import routes as dashboard
 
 logger = logging.getLogger("forge")
 
@@ -53,11 +55,29 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.mount(
+    "/static",
+    StaticFiles(directory=str(dashboard.HERE / "static")),
+    name="static",
+)
+
 app.include_router(health.router)
 app.include_router(projects.router)
 app.include_router(deployments.project_router)
 app.include_router(deployments.router)
 app.include_router(webhooks.router)
+# Last, because it owns the root path and its routes are the least specific.
+app.include_router(dashboard.router)
+
+
+@app.exception_handler(dashboard.NeedsLogin)
+async def handle_needs_login(request: Request, exc: Exception) -> RedirectResponse:
+    """A browser gets the sign-in page; only the API gets a 401.
+
+    Sending JSON to someone who typed a URL is the kind of thing that makes a
+    dashboard feel broken when it is merely locked.
+    """
+    return RedirectResponse("/login", status_code=303)
 
 
 @app.exception_handler(ForgeError)
