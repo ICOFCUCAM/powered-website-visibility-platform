@@ -18,6 +18,11 @@ dependencies = [
     "redis>=5.0",
     "anthropic>=1.7",
     "celery[redis]>=5.4",
+    # The crawler's HTML parser. Undeclared until it took five deployments to
+    # find: it was present in a development environment and absent from the
+    # image, so everything passed locally and the API died on import in
+    # production. test_dependencies_declared.py now fails before a deploy can.
+    "selectolax>=0.3.21",
 ]
 
 [project.optional-dependencies]
