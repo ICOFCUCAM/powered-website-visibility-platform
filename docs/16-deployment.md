@@ -176,9 +176,25 @@ matter are about what a client role *cannot* do.
 Deploy before the product is finished, because one item on the list takes
 weeks and nothing else shortens it.
 
-1. **Supabase project**, then apply the migrations and `db/roles.sql`. Turn on
-   PITR and test a restore — a backup you have not restored is a belief, not a
-   backup.
+1. **Supabase project**, then apply the migrations and `db/roles.sql`, in that
+   order — `roles.sql` grants on `app` and `secrets` and calls
+   `app.lock_derived_columns()`, none of which exist until the migrations have
+   run. The one exception is the two `create role` statements, which have to
+   come first: migrations 0012, 0014 and 0021 apply column protections to
+   `app_user` and each skips silently if the role is absent.
+
+   Turn on PITR and test a restore — a backup you have not restored is a
+   belief, not a backup.
+
+   **Then check `anon` reaches nothing.** Supabase grants `anon` and
+   `authenticated` full DML on every table created in `public`, and PostgREST
+   publishes each one at `/rest/v1/<table>` to anybody holding the publishable
+   key. RLS covers the tenant tables; it does not cover a *partition*, which
+   carries no policies of its own — so `gsc_query_daily_202609` was readable
+   and writable while `gsc_query_daily` was protected, and a fresh one appears
+   every month. `0023_postgrest_exposure.sql` takes both roles off the schema
+   entirely, which is the only version of this fix that stays correct as
+   tables are added. `test_rls_backstop.py` asserts the outcome.
 2. **Redis**, managed.
 3. **Object storage**, and the `S3ArtifactStore` that goes with it — see the
    blocker above. This is the one step that is code rather than an account.

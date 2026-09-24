@@ -207,3 +207,112 @@ async def test_the_request_role_cannot_write_the_spend_log(client):
                 "values (gen_random_uuid(), 'strategist_chat', 'm', 'anthropic', "
                 "  0, '{\"x\":1}')"
             )
+
+
+async def test_the_browser_facing_roles_reach_nothing(client):
+    """PostgREST's roles must not be able to touch the application's schema.
+
+    On Supabase, `anon` and `authenticated` are granted on every table created
+    in `public` by ALTER DEFAULT PRIVILEGES, and PostgREST publishes each one
+    at /rest/v1/<table> to anybody holding the publishable key. RLS covers the
+    tenant tables — but a partition carries no policies of its own, so
+    `gsc_query_daily_202609` was readable and writable while its parent was
+    protected, and a fresh one appears every month.
+
+    The fix is not per-table: it is that these roles have no access to the
+    schema at all (0023_postgrest_exposure.sql). This asserts the outcome
+    rather than the mechanism, so it keeps holding as tables are added.
+    """
+    async with db.session() as conn:
+        exists = await (
+            await conn.execute("select 1 from pg_roles where rolname = 'anon'")
+        ).fetchone()
+        if exists is None:
+            pytest.skip("not a PostgREST deployment; anon does not exist")
+
+        rows = await (
+            await conn.execute(
+                """
+                with objects as (
+                    select n.nspname as schema_name, c.relname as object_name
+                      from pg_class c
+                      join pg_namespace n on n.oid = c.relnamespace
+                     where n.nspname in ('public', 'app', 'secrets')
+                       and c.relkind in ('r', 'p', 'v')
+                )
+                select schema_name, object_name, role_name
+                  from objects
+                  cross join unnest(array['anon', 'authenticated']) as role_name
+                 where has_table_privilege(
+                           role_name,
+                           format('%I.%I', schema_name, object_name),
+                           'SELECT, INSERT, UPDATE, DELETE')
+                 order by schema_name, object_name
+                """
+            )
+        ).fetchall()
+
+    reachable = [f"{r['role_name']} -> {r['schema_name']}.{r['object_name']}" for r in rows]
+    assert reachable == [], (
+        "a browser-facing role can reach these through PostgREST, with only "
+        f"the publishable key: {reachable}"
+    )
+
+
+async def test_every_partition_has_row_level_security(client):
+    """A partition is not covered by its parent's policies when addressed
+    directly, which is exactly how PostgREST would address it.
+
+    Enabling RLS on the partition costs nothing — a query through the parent
+    uses the parent's policies — and makes the direct path return nothing.
+    `app.ensure_monthly_partition` does this for partitions created later.
+    """
+    async with db.session() as conn:
+        rows = await (
+            await conn.execute(
+                """
+                select c.relname as table_name
+                  from pg_class c
+                  join pg_namespace n on n.oid = c.relnamespace
+                 where n.nspname = 'public'
+                   and c.relkind = 'r'
+                   and c.relispartition
+                   and not c.relrowsecurity
+                 order by c.relname
+                """
+            )
+        ).fetchall()
+
+    unprotected = [r["table_name"] for r in rows]
+    assert unprotected == [], (
+        "these partitions can be addressed directly with no policy applied: "
+        f"{unprotected}"
+    )
+
+
+async def test_no_view_runs_as_its_owner(client):
+    """A view without `security_invoker` runs as whoever created it, which
+    means it bypasses row-level security for every caller — the opposite of
+    what the policies in 0006 assume."""
+    async with db.session() as conn:
+        rows = await (
+            await conn.execute(
+                """
+                select c.relname as view_name
+                  from pg_class c
+                  join pg_namespace n on n.oid = c.relnamespace
+                 where n.nspname = 'public'
+                   and c.relkind = 'v'
+                   and not coalesce(
+                       (select option_value = 'true'
+                          from pg_options_to_table(c.reloptions)
+                         where option_name = 'security_invoker'), false)
+                 order by c.relname
+                """
+            )
+        ).fetchall()
+
+    definer_views = [r["view_name"] for r in rows]
+    assert definer_views == [], (
+        f"these views bypass RLS for whoever queries them: {definer_views}"
+    )
