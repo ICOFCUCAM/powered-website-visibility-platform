@@ -44,6 +44,22 @@ process set; DeployPro runs the same set from its own dashboard.
 Google syncs starve every score, plan and report behind them — which is
 exactly what a smoke run of the scheduler did before they were separated.
 
+**Concurrency is a database connection count, not just a memory number.**
+`api/workers/app.py::_open_pools` runs on `worker_process_init`, so every
+forked child opens its own pools — and there are two, the request-path pool
+as `app_user` and the service pool as `app_service`. A pool's *floor* is one
+connection each, which `open(wait=True)` blocks on, so a worker started with
+`-c 8` needs sixteen connections before it will serve anything, and
+`DB_POOL_MAX` bounds only the ceiling above that.
+
+Add the concurrencies up and double the total before choosing a database.
+The set in `fly.toml` (8 + 4 + 4 + 2 + 2) is twenty processes and forty
+connections at rest — fine against a dedicated Postgres, and more than
+Supabase's session pooler will hand out on a small project. The symptom is
+`psycopg_pool.PoolTimeout: pool initialization incomplete after 10 sec` on
+whichever process starts once the budget is gone, which reads like a network
+fault and is arithmetic. Halve the concurrencies before you halve the pools.
+
 ## Environment
 
 Every process gets the same image and differs only in its command, so the
