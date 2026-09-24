@@ -16,7 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from api.account import routes as account_routes
-from api.adapters import db
+from api.adapters import cache, db
 from api.config import get_settings
 from api.domain.errors import AppError
 from api.hub import deps as hub_deps
@@ -51,6 +51,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         max_size=settings.pool_max_size,
         service_dsn=settings.service_database_url,
     )
+    try:
+        await cache.check_reachable(settings.redis_url)
+    except Exception:
+        await db.close_pool()
+        raise
     try:
         yield
     finally:
