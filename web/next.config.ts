@@ -2,17 +2,18 @@ import type { NextConfig } from "next";
 
 const config: NextConfig = {
   reactStrictMode: true,
-  // Trace the modules the server actually reaches and emit a self-contained
-  // `server.js`, so a runtime image needs no node_modules at all. Vercel
-  // ignores this and builds its own way; it exists for the container host,
-  // where carrying node_modules into the running image costs hundreds of
-  // megabytes on a box that does not have them to spare.
+  // Every route here prerenders: no route handlers, no middleware, no
+  // dynamic segments, no server-side fetching. So the build can emit plain
+  // files and the thing serving them needs no Node at all — a few megabytes
+  // of web server instead of a language runtime and a dependency tree, which
+  // on a host that also runs seven Python processes is the difference
+  // between fitting and not.
   //
-  // The two things tracing deliberately leaves out are `public/` and
-  // `.next/static`. A Dockerfile that forgets either produces a site that
-  // renders with no images and no CSS — which looks like a broken build and
-  // is really a missing COPY.
-  output: "standalone",
+  // The cost is that `headers()` below would do nothing, so the response
+  // headers this site used to get from its host now come from the platform's
+  // static runtime. If a route ever needs to render on a server, this line
+  // comes out and the image grows.
+  output: "export",
   // The browser never talks to Postgres and never holds a service key. Every
   // read goes through the API, where tenancy, plan limits and metering are
   // enforced in exactly one place (docs/02-api.md).
