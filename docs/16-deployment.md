@@ -274,10 +274,10 @@ weeks and nothing else shortens it.
    everything else. It is not optional and it is not only the Celery broker:
    the API reaches it for peek rate limits (`api/peek/limits.py`) and for
    OAuth state (`api/hub/services/oauth_state.py`). `REDIS_URL` is required at
-   startup, but the clients connect lazily — so a wrong value starts cleanly
-   and fails later, on the first "scan my site" and on the first Google
-   connect. Give it a password: on a shared container network, no password
-   means every other deployment on the host can read the queue.
+   startup and the API now pings it there (`api/adapters/cache.py`), so a
+   wrong value fails the deploy instead of failing a customer's first "scan my
+   site". Give it a password: on a shared container network, no password means
+   every other deployment on the host can read the queue.
 
    Set `maxmemory-policy noeviction`. A broker whose messages can be evicted
    under memory pressure loses jobs silently, which is the worst way to lose
