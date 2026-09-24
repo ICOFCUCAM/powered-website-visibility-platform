@@ -223,8 +223,8 @@ nightly incremental that existing customers depend on.
 | Postgres | Supabase (managed, PITR) | Self-hosted or Cloud SQL |
 | Auth | Supabase Auth (Google + email) | Same, or WorkOS at enterprise |
 | Object storage | Supabase Storage | S3/R2 when crawl volume justifies |
-| Web | Vercel | Same |
-| API + workers | Fly.io or Railway containers | Kubernetes at scale |
+| Web | Static export on the container host | Same, behind a CDN |
+| API + workers | Containers on one host | Kubernetes at scale |
 | Cache, rate limits, OAuth state | Redis (managed) | Same |
 | Queue / workers | Celery on Redis | Same |
 | Crawl frontier | Postgres `crawl_frontier`, leased with SKIP LOCKED | Same — see below |

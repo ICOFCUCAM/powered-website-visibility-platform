@@ -67,7 +67,7 @@ covering property held as owner is accepted.
 | Cache/queue | **Redis** — cache, rate limits, job queues, OAuth state | adopted, with one carve-out below | adopted |
 | Workers | **Celery** or equivalent | adopted | adopted |
 | Object storage | S3-compatible | adopted (Supabase Storage speaks S3; swappable) | adopted |
-| Deploy | Vercel + containers + managed PG/Redis/S3 | adopted | adopted |
+| Deploy | Containers + managed PG/Redis/S3 | adopted | adopted |
 
 **Deviation — the crawl frontier stays in Postgres.** Redis is adopted for
 caching, rate limiting, OAuth state and as the Celery broker, exactly as

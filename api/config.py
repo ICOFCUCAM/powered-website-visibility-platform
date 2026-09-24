@@ -56,7 +56,8 @@ class Settings:
     web_base_url: str
     #: Which browser origins may call this API. In any real deployment the
     #: front end and the API are two different origins by construction — the
-    #: app on Vercel, the API on a container host — so this is configuration,
+    #: site is static files under one name, this is a Python process under
+    #: another, whether or not they share a host — so this is configuration,
     #: never a constant.
     cors_origins: tuple[str, ...]
 

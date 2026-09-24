@@ -252,7 +252,9 @@ async def test_the_browser_facing_roles_reach_nothing(client):
             )
         ).fetchall()
 
-    reachable = [f"{r['role_name']} -> {r['schema_name']}.{r['object_name']}" for r in rows]
+    reachable = [
+        f"{r['role_name']} -> {r['schema_name']}.{r['object_name']}" for r in rows
+    ]
     assert reachable == [], (
         "a browser-facing role can reach these through PostgREST, with only "
         f"the publishable key: {reachable}"

@@ -1,9 +1,10 @@
 """Who may call this API from a browser.
 
-The front end and the API are two origins in any real deployment — the app on
-Vercel, the API on a container host — so this is the one piece of
-configuration that is guaranteed wrong if it is left at its development
-value, and wrong in a way that only shows up in a customer's browser.
+The front end and the API are two origins in any real deployment — the site is
+static files under one name, the API a Python process under another, whether
+or not they share a host — so this is the one piece of configuration that is
+guaranteed wrong if it is left at its development value, and wrong in a way
+that only shows up in a customer's browser.
 """
 
 from __future__ import annotations
@@ -49,13 +50,14 @@ def test_a_wildcard_hidden_among_real_origins_is_still_refused(monkeypatch):
 
 
 def test_several_origins_and_a_trailing_slash(monkeypatch):
-    """Vercel gives a preview deployment its own origin, so more than one is
-    normal. A trailing slash is not part of an origin and never matches."""
+    """A staging front end, or a preview deployment given its own name, is a
+    second legitimate origin, so more than one is normal. A trailing slash is
+    not part of an origin and never matches."""
     monkeypatch.setenv(
         "CORS_ORIGINS",
-        "https://app.example.com/, https://visibility-hub.vercel.app",
+        "https://app.example.com/, https://staging.example.com",
     )
     assert _cors_origins("production") == (
         "https://app.example.com",
-        "https://visibility-hub.vercel.app",
+        "https://staging.example.com",
     )
