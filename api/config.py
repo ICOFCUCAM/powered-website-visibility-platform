@@ -60,6 +60,12 @@ class Settings:
     #: another, whether or not they share a host — so this is configuration,
     #: never a constant.
     cors_origins: tuple[str, ...]
+    #: Cache, peek rate limits, OAuth state, Celery broker. It lived only on
+    #: GoogleSettings, which reads it from the same variable but also demands
+    #: four Google credentials to construct — so anything outside the Hub that
+    #: wanted the broker's address had to ask for Google's too, or reach past
+    #: this object into the environment. Redis is not a Google concern.
+    redis_url: str
 
     @property
     def is_production(self) -> bool:
@@ -71,7 +77,7 @@ class Settings:
             client_secret=_required("GOOGLE_CLIENT_SECRET"),
             redirect_uri=_required("GOOGLE_REDIRECT_URI"),
             token_master_key=_required("TOKEN_MASTER_KEY"),
-            redis_url=_required("REDIS_URL"),
+            redis_url=self.redis_url,
             web_base_url=os.environ.get("WEB_BASE_URL", "http://localhost:3000"),
         )
 
@@ -140,4 +146,5 @@ def get_settings() -> Settings:
         pool_max_size=int(os.environ.get("DB_POOL_MAX", "10")),
         web_base_url=os.environ.get("WEB_BASE_URL", "http://localhost:3000"),
         cors_origins=_cors_origins(environment),
+        redis_url=_required("REDIS_URL"),
     )
